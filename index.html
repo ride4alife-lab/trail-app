@@ -18,6 +18,7 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     width: 100%;
 }
 
+/* Sidebar */
 #sidebar {
     position: absolute;
     top: 10px;
@@ -42,6 +43,11 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 .trail-item:hover {
     background: #f0f0f0;
 }
+
+.legend {
+    margin-top: 8px;
+    font-size: 14px;
+}
 </style>
 </head>
 <body>
@@ -49,13 +55,22 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 <div id="sidebar">
 <b>Trails</b>
 <div id="trailList"></div>
+
+<hr>
+
+<b>Difficulty</b>
+<div class="legend">
+<div><span style="color:#2ecc71;">■■</span> Easy</div>
+<div><span style="color:#0074D9;">■■</span> Intermediate</div>
+<div><span style="color:#000000;">■■</span> Advanced</div>
+</div>
 </div>
 
 <div id="map"></div>
 
 <script>
 
-mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
+mapboxgl.accessToken = 'YOUR_MAPBOX_TOKEN_HERE';
 
 const map = new mapboxgl.Map({
     container: 'map',
@@ -66,21 +81,31 @@ const map = new mapboxgl.Map({
 
 map.on('load', function () {
 
+    // Load GeoJSON
     map.addSource('trails', {
         type: 'geojson',
         data: 'map.geojson'
     });
 
+    // Difficulty-based colors
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
         source: 'trails',
         paint: {
             'line-width': 4,
-            'line-color': '#0074D9'
+            'line-color': [
+                'match',
+                ['get', 'traildifficulty'],
+                'Easy', '#2ecc71',
+                'Intermediate', '#0074D9',
+                'Advanced', '#000000',
+                '#888888'
+            ]
         }
     });
 
+    // Build sidebar
     fetch('map.geojson')
         .then(response => response.json())
         .then(data => {
@@ -99,12 +124,14 @@ map.on('load', function () {
 
                     const coords = feature.geometry.coordinates;
 
+                    // Zoom to trail
                     const bounds = coords.reduce(function(bounds, coord) {
                         return bounds.extend(coord);
                     }, new mapboxgl.LngLatBounds(coords[0], coords[0]));
 
                     map.fitBounds(bounds, { padding: 40 });
 
+                    // Popup at midpoint
                     const mid = coords[Math.floor(coords.length / 2)];
 
                     new mapboxgl.Popup()
@@ -121,6 +148,7 @@ map.on('load', function () {
             });
         });
 
+    // Map click popup
     map.on('click', 'trail-lines', function (e) {
         const p = e.features[0].properties;
 
