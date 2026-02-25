@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Mogo Trails</title>
+<title>Trail App</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
@@ -44,6 +44,12 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     background: #f0f0f0;
 }
 
+.trail-item.active {
+    background: #0074D9;
+    color: white;
+    font-weight: bold;
+}
+
 .legend {
     margin-top: 8px;
     font-size: 14px;
@@ -70,25 +76,27 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 
 <script>
 
-// USE A PUBLIC TOKEN (pk...), not sk...
-mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbHp6MW51eDAyaXczZG9mdjNrenhrZGIifQ._Bd2lotru4nXxVLj2SSnhw';
+// *** PUT YOUR PUBLIC TOKEN HERE (pk...) ***
+mapboxgl.accessToken = 'PASTE_YOUR_PUBLIC_TOKEN_HERE';
 
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
-    center: [150.152, -35.781],
-    zoom: 14
+    center: [-105.27, 40.0], // temporary start
+    zoom: 12
 });
 
 map.on('load', function () {
 
-    // Load GeoJSON
+    const dataUrl = 'map.geojson?v=3';
+
+    // Load GeoJSON source
     map.addSource('trails', {
         type: 'geojson',
-        data: 'map.geojson'
+        data: dataUrl
     });
 
-    // Base trail layer (difficulty colors)
+    // Base trail layer
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
@@ -106,7 +114,7 @@ map.on('load', function () {
         }
     });
 
-    // Highlight layer (on top)
+    // Highlight layer
     map.addLayer({
         id: 'trail-highlight',
         type: 'line',
@@ -119,36 +127,54 @@ map.on('load', function () {
     });
 
     function highlightTrail(trailNumber) {
-    map.setFilter('trail-highlight', ['==', ['to-string', ['get', 'trailnumber']], String(trailNumber)]);
-}
-    
+        map.setFilter(
+            'trail-highlight',
+            ['==', ['to-string', ['get', 'trailnumber']], String(trailNumber)]
+        );
+    }
 
-    // Build sidebar
-    fetch('map.geojson')
+    function setActiveSidebar(trailNumber) {
+        const items = document.getElementsByClassName('trail-item');
+        for (let i = 0; i < items.length; i++) {
+            items[i].classList.remove('active');
+            if (items[i].dataset.trailnumber == trailNumber) {
+                items[i].classList.add('active');
+            }
+        }
+    }
+
+    // Fetch data for sidebar + auto-zoom
+    fetch(dataUrl)
         .then(response => response.json())
         .then(data => {
 
             const list = document.getElementById('trailList');
+            const bounds = new mapboxgl.LngLatBounds();
 
             data.features.forEach(function(feature) {
 
                 const props = feature.properties;
+                const coords = feature.geometry.coordinates;
 
+                // Extend overall bounds
+                coords.forEach(coord => bounds.extend(coord));
+
+                // Sidebar item
                 const item = document.createElement('div');
                 item.className = 'trail-item';
                 item.textContent = props.trailnumber + ' – ' + props.trailname;
+                item.dataset.trailnumber = props.trailnumber;
 
                 item.onclick = function () {
 
                     highlightTrail(props.trailnumber);
+                    setActiveSidebar(props.trailnumber);
 
-                    const coords = feature.geometry.coordinates;
-
-                    const bounds = coords.reduce(function(bounds, coord) {
-                        return bounds.extend(coord);
+                    const trailBounds = coords.reduce(function(b, coord) {
+                        return b.extend(coord);
                     }, new mapboxgl.LngLatBounds(coords[0], coords[0]));
 
-                    map.fitBounds(bounds, { padding: 40 });
+                    map.fitBounds(trailBounds, { padding: 60, maxZoom: 16 });
 
                     const mid = coords[Math.floor(coords.length / 2)];
 
@@ -164,13 +190,20 @@ map.on('load', function () {
 
                 list.appendChild(item);
             });
+
+            // Auto-zoom to all trails
+            if (!bounds.isEmpty()) {
+                map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+            }
+
         });
 
-    // Map click popup + highlight
+    // Map click interaction
     map.on('click', 'trail-lines', function (e) {
         const p = e.features[0].properties;
 
         highlightTrail(p.trailnumber);
+        setActiveSidebar(p.trailnumber);
 
         new mapboxgl.Popup()
             .setLngLat(e.lngLat)
@@ -182,16 +215,15 @@ map.on('load', function () {
             .addTo(map);
     });
 
-    map.on('mouseenter', 'trail-lines', function () {
+    map.on('mouseenter', 'trail-lines', () => {
         map.getCanvas().style.cursor = 'pointer';
     });
 
-    map.on('mouseleave', 'trail-lines', function () {
+    map.on('mouseleave', 'trail-lines', () => {
         map.getCanvas().style.cursor = '';
     });
 
 });
-
 </script>
 
 </body>
