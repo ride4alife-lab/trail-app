@@ -1,53 +1,62 @@
 {
-  "type": "FeatureCollection",
-  "features": [
+"type": "FeatureCollection",
+"features": [
 
-    {
-      "type": "Feature",
-      "properties": {
-        "trailname": "Tobcc",
-        "trailnumber": "1",
-        "traildifficulty": "Easy",
-        "zonename": "Home",
-        "zonecode": "HOME"
-      },
-      "geometry": {
-        "type": "LineString",
-        "coordinates": [
-          [-105.27052,39.99934],
-          [-105.27041,39.99945],
-          [-105.27030,39.99957],
-          [-105.27018,39.99970],
-          [-105.27005,39.99984],
-          [-105.26992,39.99999],
-          [-105.26980,40.00012],
-          [-105.26969,40.00023]
-        ]
-      }
-    },
+```
+{
+  "type": "Feature",
+  "properties": {
+    "trailname": "Tobcc",
+    "trailnumber": "1",
+    "traildifficulty": "Easy",
+    "zonename": "Home",
+    "zonecode": "HOME"
+  },
+  "geometry": {
+    "type": "LineString",
+    "coordinates": [
+      [-105.2693318, 40.0004723],
+      [-105.2694102, 40.0004096],
+      [-105.2695789, 40.0003321],
+      [-105.2696904, 40.0002315],
+      [-105.2698047, 40.0001228],
+      [-105.2699236, 39.9999924],
+      [-105.2700498, 39.9998426],
+      [-105.2701803, 39.9997019],
+      [-105.2702984, 39.9995698],
+      [-105.2704109, 39.9994527],
+      [-105.2705221, 39.9993398]
+    ]
+  }
+},
 
-    {
-      "type": "Feature",
-      "properties": {
-        "trailname": "Frombcc",
-        "trailnumber": "2",
-        "traildifficulty": "Advanced",
-        "zonename": "Home",
-        "zonecode": "HOME"
-      },
-      "geometry": {
-        "type": "LineString",
-        "coordinates": [
-          [-105.26969,40.00023],
-          [-105.26979,40.00015],
-          [-105.26990,40.00005],
-          [-105.27005,39.99990],
-          [-105.27020,39.99975],
-          [-105.27035,39.99960],
-          [-105.27052,39.99949]
-        ]
-      }
-    }
+{
+  "type": "Feature",
+  "properties": {
+    "trailname": "Frombcc",
+    "trailnumber": "2",
+    "traildifficulty": "Advanced",
+    "zonename": "Home",
+    "zonecode": "HOME"
+  },
+  "geometry": {
+    "type": "LineString",
+    "coordinates": [
+      [-105.2705221, 39.9993398],
+      [-105.2704095, 39.9994516],
+      [-105.2702976, 39.9995699],
+      [-105.2701792, 39.9997025],
+      [-105.2700483, 39.9998441],
+      [-105.2699217, 39.9999948],
+      [-105.2698029, 40.0001243],
+      [-105.2696897, 40.0002306],
+      [-105.2695768, 40.0003334],
+      [-105.2694096, 40.0004102],
+      [-105.2693318, 40.0004723]
+    ]
+  }
+}
+```
 
-  ]
+]
 }
