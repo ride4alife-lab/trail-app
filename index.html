@@ -119,7 +119,8 @@ map.on('load', function () {
     });
 
     function highlightTrail(trailNumber) {
-        map.setFilter('trail-highlight', ['==', ['get', 'trailnumber'], trailNumber]);
+    map.setFilter('trail-highlight', ['==', ['to-string', ['get', 'trailnumber']], String(trailNumber)]);
+}
     }
 
     // Build sidebar
