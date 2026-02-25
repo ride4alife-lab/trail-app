@@ -70,7 +70,8 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 
 <script>
 
-mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
+// USE A PUBLIC TOKEN (pk...), not sk...
+mapboxgl.accessToken = 'PASTE_YOUR_PUBLIC_TOKEN_HERE';
 
 const map = new mapboxgl.Map({
     container: 'map',
@@ -87,22 +88,39 @@ map.on('load', function () {
         data: 'map.geojson'
     });
 
-    // Difficulty-based colors
+    // Base trail layer (difficulty colors)
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
         source: 'trails',
-paint: {
-    'line-width': 5,
-    'line-color': [
-        'match',
-        ['downcase', ['get', 'traildifficulty']],
-        'easy', '#2ecc71',
-        'intermediate', '#0074D9',
-        'advanced', '#000000',
-        '#ff0000'
-    ]
-}    });
+        paint: {
+            'line-width': 5,
+            'line-color': [
+                'match',
+                ['downcase', ['get', 'traildifficulty']],
+                'easy', '#2ecc71',
+                'intermediate', '#0074D9',
+                'advanced', '#000000',
+                '#ff0000'
+            ]
+        }
+    });
+
+    // Highlight layer (on top)
+    map.addLayer({
+        id: 'trail-highlight',
+        type: 'line',
+        source: 'trails',
+        paint: {
+            'line-width': 9,
+            'line-color': '#FFD700'
+        },
+        filter: ['==', ['get', 'trailnumber'], '']
+    });
+
+    function highlightTrail(trailNumber) {
+        map.setFilter('trail-highlight', ['==', ['get', 'trailnumber'], trailNumber]);
+    }
 
     // Build sidebar
     fetch('map.geojson')
@@ -121,16 +139,16 @@ paint: {
 
                 item.onclick = function () {
 
+                    highlightTrail(props.trailnumber);
+
                     const coords = feature.geometry.coordinates;
 
-                    // Zoom to trail
                     const bounds = coords.reduce(function(bounds, coord) {
                         return bounds.extend(coord);
                     }, new mapboxgl.LngLatBounds(coords[0], coords[0]));
 
                     map.fitBounds(bounds, { padding: 40 });
 
-                    // Popup at midpoint
                     const mid = coords[Math.floor(coords.length / 2)];
 
                     new mapboxgl.Popup()
@@ -147,9 +165,11 @@ paint: {
             });
         });
 
-    // Map click popup
+    // Map click popup + highlight
     map.on('click', 'trail-lines', function (e) {
         const p = e.features[0].properties;
+
+        highlightTrail(p.trailnumber);
 
         new mapboxgl.Popup()
             .setLngLat(e.lngLat)
