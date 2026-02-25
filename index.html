@@ -92,11 +92,17 @@ map.on('load', function () {
         id: 'trail-lines',
         type: 'line',
         source: 'trails',
- paint: {
+paint: {
     'line-width': 5,
-    'line-color': '#ff0000'
-}
-    });
+    'line-color': [
+        'match',
+        ['downcase', ['get', 'traildifficulty']],
+        'easy', '#2ecc71',
+        'intermediate', '#0074D9',
+        'advanced', '#000000',
+        '#ff0000'
+    ]
+}    });
 
     // Build sidebar
     fetch('map.geojson')
