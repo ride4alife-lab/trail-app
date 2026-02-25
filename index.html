@@ -92,17 +92,10 @@ map.on('load', function () {
         id: 'trail-lines',
         type: 'line',
         source: 'trails',
-        paint: {
-            'line-width': 4,
-            'line-color': [
-                'match',
-                ['get', 'traildifficulty'],
-                'Easy', '#2ecc71',
-                'Intermediate', '#0074D9',
-                'Advanced', '#000000',
-                '#888888'
-            ]
-        }
+ paint: {
+    'line-width': 5,
+    'line-color': '#ff0000'
+}
     });
 
     // Build sidebar
