@@ -44,12 +44,6 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     background: #f0f0f0;
 }
 
-.trail-item.active {
-    background: #0074D9;
-    color: white;
-    font-weight: bold;
-}
-
 .legend {
     margin-top: 8px;
     font-size: 14px;
@@ -76,27 +70,28 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 
 <script>
 
-// *** PUT YOUR PUBLIC TOKEN HERE (pk...) ***
+// Your public Mapbox token
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
+// Initial map (location doesn't matter — auto-fit will adjust)
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
-    center: [-105.27, 40.0], // temporary start
+    center: [-105.27, 40.0],
     zoom: 12
 });
 
 map.on('load', function () {
 
-    const dataUrl = 'map.geojson?v=3';
+    const dataUrl = 'map.geojson?v=100';
 
-    // Load GeoJSON source
+    // Add GeoJSON source
     map.addSource('trails', {
         type: 'geojson',
         data: dataUrl
     });
 
-    // Base trail layer
+    // Draw trails
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
@@ -114,67 +109,43 @@ map.on('load', function () {
         }
     });
 
-    // Highlight layer
-    map.addLayer({
-        id: 'trail-highlight',
-        type: 'line',
-        source: 'trails',
-        paint: {
-            'line-width': 9,
-            'line-color': '#FFD700'
-        },
-        filter: ['==', ['get', 'trailnumber'], '']
-    });
-
-    function highlightTrail(trailNumber) {
-        map.setFilter(
-            'trail-highlight',
-            ['==', ['to-string', ['get', 'trailnumber']], String(trailNumber)]
-        );
-    }
-
-    function setActiveSidebar(trailNumber) {
-        const items = document.getElementsByClassName('trail-item');
-        for (let i = 0; i < items.length; i++) {
-            items[i].classList.remove('active');
-            if (items[i].dataset.trailnumber == trailNumber) {
-                items[i].classList.add('active');
-            }
-        }
-    }
-
-    // Fetch data for sidebar + auto-zoom
+    // Load data for sidebar and auto-zoom
     fetch(dataUrl)
         .then(response => response.json())
         .then(data => {
 
-            const list = document.getElementById('trailList');
+            // ---- Auto zoom to all trails ----
             const bounds = new mapboxgl.LngLatBounds();
 
-            data.features.forEach(function(feature) {
+            data.features.forEach(feature => {
+                feature.geometry.coordinates.forEach(coord => {
+                    bounds.extend(coord);
+                });
+            });
+
+            if (!bounds.isEmpty()) {
+                map.fitBounds(bounds, { padding: 40 });
+            }
+
+            // ---- Build sidebar ----
+            const list = document.getElementById('trailList');
+
+            data.features.forEach(feature => {
 
                 const props = feature.properties;
                 const coords = feature.geometry.coordinates;
 
-                // Extend overall bounds
-                coords.forEach(coord => bounds.extend(coord));
-
-                // Sidebar item
                 const item = document.createElement('div');
                 item.className = 'trail-item';
                 item.textContent = props.trailnumber + ' – ' + props.trailname;
-                item.dataset.trailnumber = props.trailnumber;
 
                 item.onclick = function () {
 
-                    highlightTrail(props.trailnumber);
-                    setActiveSidebar(props.trailnumber);
+                    const trailBounds = coords.reduce((b, c) => b.extend(c),
+                        new mapboxgl.LngLatBounds(coords[0], coords[0])
+                    );
 
-                    const trailBounds = coords.reduce(function(b, coord) {
-                        return b.extend(coord);
-                    }, new mapboxgl.LngLatBounds(coords[0], coords[0]));
-
-                    map.fitBounds(trailBounds, { padding: 60, maxZoom: 16 });
+                    map.fitBounds(trailBounds, { padding: 40 });
 
                     const mid = coords[Math.floor(coords.length / 2)];
 
@@ -191,19 +162,11 @@ map.on('load', function () {
                 list.appendChild(item);
             });
 
-            // Auto-zoom to all trails
-            if (!bounds.isEmpty()) {
-                map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
-            }
-
         });
 
-    // Map click interaction
+    // Click popup on map
     map.on('click', 'trail-lines', function (e) {
         const p = e.features[0].properties;
-
-        highlightTrail(p.trailnumber);
-        setActiveSidebar(p.trailnumber);
 
         new mapboxgl.Popup()
             .setLngLat(e.lngLat)
@@ -215,13 +178,8 @@ map.on('load', function () {
             .addTo(map);
     });
 
-    map.on('mouseenter', 'trail-lines', () => {
-        map.getCanvas().style.cursor = 'pointer';
-    });
-
-    map.on('mouseleave', 'trail-lines', () => {
-        map.getCanvas().style.cursor = '';
-    });
+    map.on('mouseenter', 'trail-lines', () => map.getCanvas().style.cursor = 'pointer');
+    map.on('mouseleave', 'trail-lines', () => map.getCanvas().style.cursor = '');
 
 });
 </script>
