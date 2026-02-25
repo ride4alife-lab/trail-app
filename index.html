@@ -71,7 +71,7 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 <script>
 
 // USE A PUBLIC TOKEN (pk...), not sk...
-mapboxgl.accessToken = 'PASTE_YOUR_PUBLIC_TOKEN_HERE';
+mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbHp6MW51eDAyaXczZG9mdjNrenhrZGIifQ._Bd2lotru4nXxVLj2SSnhw';
 
 const map = new mapboxgl.Map({
     container: 'map',
@@ -121,7 +121,7 @@ map.on('load', function () {
     function highlightTrail(trailNumber) {
     map.setFilter('trail-highlight', ['==', ['to-string', ['get', 'trailnumber']], String(trailNumber)]);
 }
-    }
+    
 
     // Build sidebar
     fetch('map.geojson')
