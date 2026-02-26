@@ -69,30 +69,30 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 <div id="map"></div>
 
 <script>
+<script>
 
-// Your public token
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
-// Create map (temporary center — will auto-fit)
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
     center: [-105.0633, 39.9223],
-    zoom: 13
+    zoom: 14
 });
+
+let trailData = null;
+let userMarker = null;
 
 map.on('load', function () {
 
-    // Cache-buster so GitHub Pages updates show
-    const dataUrl = 'map.geojson?v=7';
+    const dataUrl = 'map.geojson?v=2';
 
-    // Add GeoJSON source
     map.addSource('trails', {
         type: 'geojson',
         data: dataUrl
     });
 
-    // Trail layer
+    // Trail colors
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
@@ -110,80 +110,115 @@ map.on('load', function () {
         }
     });
 
-    // Build sidebar + auto zoom
+    // Highlight layer
+    map.addLayer({
+        id: 'trail-highlight',
+        type: 'line',
+        source: 'trails',
+        paint: {
+            'line-width': 8,
+            'line-color': '#FFD700'
+        },
+        filter: ['==', 'trailnumber', '']
+    });
+
+    // Load trail data for distance checks
     fetch(dataUrl)
         .then(r => r.json())
         .then(data => {
+            trailData = data;
+        });
+});
 
-            const list = document.getElementById('trailList');
-            const bounds = new mapboxgl.LngLatBounds();
 
-            data.features.forEach(feature => {
+// -------- GPS BUTTON --------
 
-                const props = feature.properties;
-                const coords = feature.geometry.coordinates;
+const gpsButton = document.createElement('button');
+gpsButton.innerText = 'Center on Me';
+gpsButton.style.position = 'absolute';
+gpsButton.style.top = '10px';
+gpsButton.style.right = '10px';
+gpsButton.style.zIndex = '2';
+gpsButton.style.padding = '8px';
+gpsButton.style.background = 'white';
+gpsButton.style.border = '1px solid #ccc';
+gpsButton.style.cursor = 'pointer';
 
-                // Expand overall bounds
-                coords.forEach(c => bounds.extend(c));
+document.body.appendChild(gpsButton);
 
-                // Sidebar item
-                const item = document.createElement('div');
-                item.className = 'trail-item';
-                item.textContent = props.trailnumber + ' – ' + props.trailname;
 
-                item.onclick = function () {
+gpsButton.onclick = function () {
 
-                    const trailBounds = coords.reduce(
-                        (b, c) => b.extend(c),
-                        new mapboxgl.LngLatBounds(coords[0], coords[0])
-                    );
+    if (!navigator.geolocation) {
+        alert('Geolocation not supported');
+        return;
+    }
 
-                    map.fitBounds(trailBounds, { padding: 40 });
+    navigator.geolocation.getCurrentPosition(function(position) {
 
-                    const mid = coords[Math.floor(coords.length / 2)];
+        const lng = position.coords.longitude;
+        const lat = position.coords.latitude;
 
-                    new mapboxgl.Popup()
-                        .setLngLat(mid)
-                        .setHTML(
-                            '<b>' + props.trailname + ' (' + props.trailnumber + ')</b><br>' +
-                            'Difficulty: ' + props.traildifficulty + '<br>' +
-                            'Zone: ' + props.zonename
-                        )
-                        .addTo(map);
-                };
-
-                list.appendChild(item);
-            });
-
-            // Auto-fit to all trails
-            if (!bounds.isEmpty()) {
-                map.fitBounds(bounds, { padding: 40 });
-            }
+        map.flyTo({
+            center: [lng, lat],
+            zoom: 16
         });
 
-    // Click popup on map
-    map.on('click', 'trail-lines', function (e) {
-        const p = e.features[0].properties;
+        // Blue marker
+        if (userMarker) userMarker.remove();
 
-        new mapboxgl.Popup()
-            .setLngLat(e.lngLat)
-            .setHTML(
-                '<b>' + p.trailname + ' (' + p.trailnumber + ')</b><br>' +
-                'Difficulty: ' + p.traildifficulty + '<br>' +
-                'Zone: ' + p.zonename
-            )
+        userMarker = new mapboxgl.Marker({ color: 'blue' })
+            .setLngLat([lng, lat])
             .addTo(map);
-    });
 
-    map.on('mouseenter', 'trail-lines', () => {
-        map.getCanvas().style.cursor = 'pointer';
-    });
+        // Find nearest trail
+        if (trailData) {
 
-    map.on('mouseleave', 'trail-lines', () => {
-        map.getCanvas().style.cursor = '';
-    });
+            let nearest = null;
+            let minDist = Infinity;
 
-});
+            trailData.features.forEach(feature => {
+                feature.geometry.coordinates.forEach(coord => {
+
+                    const d = getDistance(lat, lng, coord[1], coord[0]);
+
+                    if (d < minDist) {
+                        minDist = d;
+                        nearest = feature.properties.trailnumber;
+                    }
+                });
+            });
+
+            if (nearest) {
+                map.setFilter('trail-highlight', ['==', 'trailnumber', String(nearest)]);
+            }
+        }
+
+    }, function() {
+        alert('Location permission denied');
+    });
+};
+
+
+// -------- Distance (meters) --------
+
+function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const toRad = Math.PI / 180;
+
+    const dLat = (lat2 - lat1) * toRad;
+    const dLon = (lon2 - lon1) * toRad;
+
+    const a =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * toRad) *
+        Math.cos(lat2 * toRad) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+</script>
 </script>
 
 </body>
