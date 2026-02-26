@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Mogo Trails</title>
+<title>Trail App</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
@@ -18,7 +18,6 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     width: 100%;
 }
 
-/* Sidebar */
 #sidebar {
     position: absolute;
     top: 10px;
@@ -30,7 +29,7 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     border-radius: 6px;
     box-shadow: 0 0 8px rgba(0,0,0,0.2);
     overflow-y: auto;
-    z-index: 1;
+    z-index: 2;
 }
 
 .trail-item {
@@ -47,6 +46,18 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 .legend {
     margin-top: 8px;
     font-size: 14px;
+}
+
+#gpsBtn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 2;
+    padding: 10px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
 }
 </style>
 </head>
@@ -66,9 +77,10 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 </div>
 </div>
 
+<button id="gpsBtn">Center on Me</button>
+
 <div id="map"></div>
 
-<script>
 <script>
 
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
@@ -85,14 +97,13 @@ let userMarker = null;
 
 map.on('load', function () {
 
-    const dataUrl = 'map.geojson?v=2';
+    const dataUrl = 'map.geojson?v=1';
 
     map.addSource('trails', {
         type: 'geojson',
         data: dataUrl
     });
 
-    // Trail colors
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
@@ -110,7 +121,6 @@ map.on('load', function () {
         }
     });
 
-    // Highlight layer
     map.addLayer({
         id: 'trail-highlight',
         type: 'line',
@@ -122,32 +132,50 @@ map.on('load', function () {
         filter: ['==', 'trailnumber', '']
     });
 
-    // Load trail data for distance checks
     fetch(dataUrl)
         .then(r => r.json())
         .then(data => {
+
             trailData = data;
+
+            const list = document.getElementById('trailList');
+
+            data.features.forEach(feature => {
+
+                const props = feature.properties;
+                const coords = feature.geometry.coordinates;
+
+                const item = document.createElement('div');
+                item.className = 'trail-item';
+                item.textContent = props.trailnumber + ' – ' + props.trailname;
+
+                item.onclick = function () {
+
+                    map.setFilter('trail-highlight', ['==', 'trailnumber', String(props.trailnumber)]);
+
+                    const bounds = coords.reduce(
+                        (b, c) => b.extend(c),
+                        new mapboxgl.LngLatBounds(coords[0], coords[0])
+                    );
+
+                    map.fitBounds(bounds, { padding: 40 });
+                };
+
+                list.appendChild(item);
+            });
+
+            // Fit map to all trails
+            const bounds = new mapboxgl.LngLatBounds();
+            data.features.forEach(f => {
+                f.geometry.coordinates.forEach(c => bounds.extend(c));
+            });
+            map.fitBounds(bounds, { padding: 40 });
+
         });
+
 });
 
-
-// -------- GPS BUTTON --------
-
-const gpsButton = document.createElement('button');
-gpsButton.innerText = 'Center on Me';
-gpsButton.style.position = 'absolute';
-gpsButton.style.top = '10px';
-gpsButton.style.right = '10px';
-gpsButton.style.zIndex = '2';
-gpsButton.style.padding = '8px';
-gpsButton.style.background = 'white';
-gpsButton.style.border = '1px solid #ccc';
-gpsButton.style.cursor = 'pointer';
-
-document.body.appendChild(gpsButton);
-
-
-gpsButton.onclick = function () {
+document.getElementById('gpsBtn').onclick = function () {
 
     if (!navigator.geolocation) {
         alert('Geolocation not supported');
@@ -164,14 +192,12 @@ gpsButton.onclick = function () {
             zoom: 16
         });
 
-        // Blue marker
         if (userMarker) userMarker.remove();
 
         userMarker = new mapboxgl.Marker({ color: 'blue' })
             .setLngLat([lng, lat])
             .addTo(map);
 
-        // Find nearest trail
         if (trailData) {
 
             let nearest = null;
@@ -180,7 +206,7 @@ gpsButton.onclick = function () {
             trailData.features.forEach(feature => {
                 feature.geometry.coordinates.forEach(coord => {
 
-                    const d = getDistance(lat, lng, coord[1], coord[0]);
+                    const d = distance(lat, lng, coord[1], coord[0]);
 
                     if (d < minDist) {
                         minDist = d;
@@ -199,10 +225,7 @@ gpsButton.onclick = function () {
     });
 };
 
-
-// -------- Distance (meters) --------
-
-function getDistance(lat1, lon1, lat2, lon2) {
+function distance(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const toRad = Math.PI / 180;
 
@@ -218,7 +241,6 @@ function getDistance(lat1, lon1, lat2, lon2) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-</script>
 </script>
 
 </body>
