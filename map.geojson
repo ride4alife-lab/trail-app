@@ -1,16 +1,11 @@
 {
-"type": "FeatureCollection",
-"features": [
-
-```
-{
   "type": "Feature",
   "properties": {
     "trailname": "Tobcc",
     "trailnumber": "1",
     "traildifficulty": "Easy",
     "zonename": "Home",
-    "zonecode": "HO"
+    "zonecode": "HOME"
   },
   "geometry": {
     "type": "LineString",
@@ -42,7 +37,7 @@
     "trailnumber": "2",
     "traildifficulty": "Advanced",
     "zonename": "Home",
-    "zonecode": "HO"
+    "zonecode": "HOME"
   },
   "geometry": {
     "type": "LineString",
@@ -65,8 +60,4 @@
       [-105.0633120, 39.9222740]
     ]
   }
-}
-```
-
-]
 }
