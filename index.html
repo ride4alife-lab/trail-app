@@ -2,51 +2,188 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Trail Test</title>
+<title>Mogo Trails</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
 <style>
-body { margin:0; padding:0; }
-#map { position:absolute; top:0; bottom:0; width:100%; }
+body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+
+#map {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+}
+
+/* Sidebar */
+#sidebar {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 220px;
+    max-height: 90%;
+    background: white;
+    padding: 10px;
+    border-radius: 6px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    overflow-y: auto;
+    z-index: 1;
+}
+
+.trail-item {
+    padding: 6px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.trail-item:hover {
+    background: #f0f0f0;
+}
+
+.legend {
+    margin-top: 8px;
+    font-size: 14px;
+}
 </style>
 </head>
 <body>
+
+<div id="sidebar">
+<b>Trails</b>
+<div id="trailList"></div>
+
+<hr>
+
+<b>Difficulty</b>
+<div class="legend">
+<div><span style="color:#2ecc71;">■■</span> Easy</div>
+<div><span style="color:#0074D9;">■■</span> Intermediate</div>
+<div><span style="color:#000000;">■■</span> Advanced</div>
+</div>
+</div>
 
 <div id="map"></div>
 
 <script>
 
+// Your public token
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
+// Create map (temporary center — will auto-fit)
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
-    center: [-105.0633, 39.9223],  // exact first GPX point
-    zoom: 15
+    center: [-105.0633, 39.9223],
+    zoom: 13
 });
 
 map.on('load', function () {
 
+    // Cache-buster so GitHub Pages updates show
+    const dataUrl = 'map.geojson?v=7';
+
+    // Add GeoJSON source
     map.addSource('trails', {
         type: 'geojson',
-        data: 'map.geojson?v=200'
+        data: dataUrl
     });
 
+    // Trail layer
     map.addLayer({
         id: 'trail-lines',
         type: 'line',
         source: 'trails',
         paint: {
-            'line-width': 6,
-            'line-color': '#ff0000'
+            'line-width': 5,
+            'line-color': [
+                'match',
+                ['downcase', ['get', 'traildifficulty']],
+                'easy', '#2ecc71',
+                'intermediate', '#0074D9',
+                'advanced', '#000000',
+                '#ff0000'
+            ]
         }
     });
 
-});
+    // Build sidebar + auto zoom
+    fetch(dataUrl)
+        .then(r => r.json())
+        .then(data => {
 
+            const list = document.getElementById('trailList');
+            const bounds = new mapboxgl.LngLatBounds();
+
+            data.features.forEach(feature => {
+
+                const props = feature.properties;
+                const coords = feature.geometry.coordinates;
+
+                // Expand overall bounds
+                coords.forEach(c => bounds.extend(c));
+
+                // Sidebar item
+                const item = document.createElement('div');
+                item.className = 'trail-item';
+                item.textContent = props.trailnumber + ' – ' + props.trailname;
+
+                item.onclick = function () {
+
+                    const trailBounds = coords.reduce(
+                        (b, c) => b.extend(c),
+                        new mapboxgl.LngLatBounds(coords[0], coords[0])
+                    );
+
+                    map.fitBounds(trailBounds, { padding: 40 });
+
+                    const mid = coords[Math.floor(coords.length / 2)];
+
+                    new mapboxgl.Popup()
+                        .setLngLat(mid)
+                        .setHTML(
+                            '<b>' + props.trailname + ' (' + props.trailnumber + ')</b><br>' +
+                            'Difficulty: ' + props.traildifficulty + '<br>' +
+                            'Zone: ' + props.zonename
+                        )
+                        .addTo(map);
+                };
+
+                list.appendChild(item);
+            });
+
+            // Auto-fit to all trails
+            if (!bounds.isEmpty()) {
+                map.fitBounds(bounds, { padding: 40 });
+            }
+        });
+
+    // Click popup on map
+    map.on('click', 'trail-lines', function (e) {
+        const p = e.features[0].properties;
+
+        new mapboxgl.Popup()
+            .setLngLat(e.lngLat)
+            .setHTML(
+                '<b>' + p.trailname + ' (' + p.trailnumber + ')</b><br>' +
+                'Difficulty: ' + p.traildifficulty + '<br>' +
+                'Zone: ' + p.zonename
+            )
+            .addTo(map);
+    });
+
+    map.on('mouseenter', 'trail-lines', () => {
+        map.getCanvas().style.cursor = 'pointer';
+    });
+
+    map.on('mouseleave', 'trail-lines', () => {
+        map.getCanvas().style.cursor = '';
+    });
+
+});
 </script>
 
 </body>
