@@ -24,20 +24,38 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     top: 10px;
     left: 10px;
     width: 220px;
+    max-height: 80%;
     background: white;
     padding: 10px;
     border-radius: 6px;
     box-shadow: 0 0 8px rgba(0,0,0,0.2);
-    z-index: 1;
+    overflow-y: auto;
+    z-index: 2;
 }
 
-/* Smaller sidebar on mobile */
+/* Mobile adjustments */
 @media (max-width: 600px) {
     #sidebar {
-        width: 150px;
+        width: 160px;
         font-size: 13px;
-        opacity: 0.9;
+        padding: 8px;
     }
+}
+
+.trail-item {
+    padding: 5px;
+    margin-bottom: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.trail-item:hover {
+    background: #f0f0f0;
+}
+
+.legend {
+    margin-top: 8px;
+    font-size: 13px;
 }
 
 /* Center button */
@@ -45,7 +63,7 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     position: absolute;
     bottom: 20px;
     right: 20px;
-    z-index: 2;
+    z-index: 3;
     background: #0074D9;
     color: white;
     border: none;
@@ -56,7 +74,7 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     cursor: pointer;
 }
 
-/* Hide button on desktop */
+/* Hide on desktop */
 @media (min-width: 700px) {
     #locateBtn {
         display: none;
@@ -67,10 +85,17 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 <body>
 
 <div id="sidebar">
-<b>Difficulty</b><br>
-<span style="color:#2ecc71;">■■</span> Easy<br>
-<span style="color:#0074D9;">■■</span> Intermediate<br>
-<span style="color:#000000;">■■</span> Advanced
+<b>Trails</b>
+<div id="trailList"></div>
+
+<hr>
+
+<b>Difficulty</b>
+<div class="legend">
+<div><span style="color:#2ecc71;">■■</span> Easy</div>
+<div><span style="color:#0074D9;">■■</span> Intermediate</div>
+<div><span style="color:#000000;">■■</span> Advanced</div>
+</div>
 </div>
 
 <button id="locateBtn">Center on Me</button>
@@ -82,7 +107,6 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 // Mapbox public token
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
-// Create map
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
@@ -90,13 +114,18 @@ const map = new mapboxgl.Map({
     zoom: 14
 });
 
+let trailsData = null;
+let userMarker = null;
+let trackingStarted = false;
 
-// ---------- Load Trails ----------
+// Load trails
 map.on('load', function () {
+
+    const dataUrl = 'map.geojson?v=1';
 
     map.addSource('trails', {
         type: 'geojson',
-        data: 'map.geojson?v=1'
+        data: dataUrl
     });
 
     map.addLayer({
@@ -116,15 +145,77 @@ map.on('load', function () {
         }
     });
 
+    // Sidebar data
+    fetch(dataUrl)
+        .then(r => r.json())
+        .then(data => {
+            trailsData = data;
+            buildSidebar(data);
+        });
+
 });
 
+// Sidebar
+function buildSidebar(data) {
 
-// ---------- GPS Tracking ----------
+    const list = document.getElementById('trailList');
 
-let userMarker = null;
-let trackingStarted = false;
+    data.features.forEach(feature => {
 
-// Create blue dot
+        const p = feature.properties;
+
+        const item = document.createElement('div');
+        item.className = 'trail-item';
+        item.textContent = p.trailnumber + ' – ' + p.trailname;
+
+        item.onclick = function () {
+            zoomToTrail(feature);
+            showTrailPopup(feature);
+        };
+
+        list.appendChild(item);
+    });
+}
+
+// Zoom helper
+function zoomToTrail(feature) {
+
+    const coords = feature.geometry.coordinates;
+
+    const bounds = coords.reduce(function(bounds, coord) {
+        return bounds.extend(coord);
+    }, new mapboxgl.LngLatBounds(coords[0], coords[0]));
+
+    map.fitBounds(bounds, { padding: 40 });
+}
+
+// Popup helper
+function showTrailPopup(feature) {
+
+    const coords = feature.geometry.coordinates;
+    const mid = coords[Math.floor(coords.length / 2)];
+    const p = feature.properties;
+
+    new mapboxgl.Popup()
+        .setLngLat(mid)
+        .setHTML(
+            '<b>' + p.trailname + ' (' + p.trailnumber + ')</b><br>' +
+            'Difficulty: ' + p.traildifficulty + '<br>' +
+            'Zone: ' + p.zonename
+        )
+        .addTo(map);
+}
+
+// Click trail line
+map.on('click', 'trail-lines', function (e) {
+    showTrailPopup(e.features[0]);
+});
+
+map.on('mouseenter', 'trail-lines', () => map.getCanvas().style.cursor = 'pointer');
+map.on('mouseleave', 'trail-lines', () => map.getCanvas().style.cursor = '');
+
+
+// GPS blue dot
 function createUserDot() {
     const el = document.createElement('div');
     el.style.width = '16px';
@@ -136,7 +227,6 @@ function createUserDot() {
     return el;
 }
 
-// Update user position
 function updateUserLocation(lat, lon) {
 
     if (!userMarker) {
@@ -147,52 +237,27 @@ function updateUserLocation(lat, lon) {
         userMarker.setLngLat([lon, lat]);
     }
 
-    // Follow user (navigation mode)
+    // Continuous recenter
     map.easeTo({
         center: [lon, lat],
         duration: 500
     });
 }
 
-
-// Center on Me button
+// Center button
 document.getElementById('locateBtn').onclick = function () {
 
     if (trackingStarted) return;
-
-    if (!navigator.geolocation) {
-        alert("Geolocation not supported");
-        return;
-    }
 
     trackingStarted = true;
     this.style.display = 'none';
 
     navigator.geolocation.watchPosition(
-        function(position) {
-            updateUserLocation(
-                position.coords.latitude,
-                position.coords.longitude
-            );
-        },
-        function(err) {
-            alert("Location error: " + err.message);
-        },
-        {
-            enableHighAccuracy: true,
-            maximumAge: 0,
-            timeout: 10000
-        }
+        pos => updateUserLocation(pos.coords.latitude, pos.coords.longitude),
+        err => alert("Location error: " + err.message),
+        { enableHighAccuracy: true }
     );
 };
-
-
-// ---------- Offline Support ----------
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-        .then(() => console.log('Service Worker registered'))
-        .catch(err => console.log('Service Worker failed:', err));
-}
 
 </script>
 
