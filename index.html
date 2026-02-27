@@ -12,11 +12,13 @@
 <style>
 body { margin:0; font-family: Arial, sans-serif; }
 
+/* Map fills screen */
 #map {
     position:absolute;
     top:0;
-    bottom:180px;
-    width:100%;
+    left:0;
+    right:0;
+    bottom:0;
 }
 
 /* Sidebar */
@@ -35,26 +37,22 @@ body { margin:0; font-family: Arial, sans-serif; }
     max-width:80vw;
 }
 
-@media (max-width:600px){
-    #sidebar.collapsed { display:none; }
-}
-
 .trail-item {
     cursor:pointer;
     padding:3px 0;
 }
 
-/* Elevation panel */
+/* Elevation panel — mobile safe */
 #profileContainer {
-    position:absolute;
-    bottom:0;
+    position:fixed;
     left:0;
+    bottom:0;
     width:100%;
     height:180px;
     background:white;
     box-shadow:0 -2px 6px rgba(0,0,0,0.3);
     display:none;
-    z-index:3;
+    z-index:999;
 }
 </style>
 </head>
@@ -90,9 +88,10 @@ const map = new mapboxgl.Map({
 
 map.on('load', loadTrails);
 
+/* ---------- Load Trails ---------- */
 function loadTrails(){
 
-    fetch('map.geojson?v=1')
+    fetch('map.geojson?v=2')
     .then(r=>r.json())
     .then(data=>{
 
@@ -101,6 +100,7 @@ function loadTrails(){
             data:data
         });
 
+        /* Base trail colors */
         map.addLayer({
             id:'trail-lines',
             type:'line',
@@ -118,6 +118,7 @@ function loadTrails(){
             }
         });
 
+        /* Gold highlight */
         map.addLayer({
             id:'trail-highlight',
             type:'line',
@@ -137,6 +138,7 @@ function loadTrails(){
     });
 }
 
+/* ---------- Sidebar ---------- */
 function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
@@ -150,10 +152,13 @@ function buildSidebar(data){
     });
 }
 
+/* ---------- Select Trail ---------- */
 function selectTrail(feature){
 
+    /* Close previous popup */
     if(currentPopup) currentPopup.remove();
 
+    /* Highlight trail */
     map.setFilter('trail-highlight',
         ['==',
             ['to-string',['get','trailnumber']],
@@ -163,11 +168,13 @@ function selectTrail(feature){
 
     const coords = feature.geometry.coordinates;
 
+    /* Zoom to trail */
     const bounds = coords.reduce((b,c)=>b.extend(c),
         new mapboxgl.LngLatBounds(coords[0],coords[0])
     );
     map.fitBounds(bounds,{padding:40});
 
+    /* Popup */
     const mid = coords[Math.floor(coords.length/2)];
 
     currentPopup = new mapboxgl.Popup()
@@ -175,14 +182,13 @@ function selectTrail(feature){
         .setHTML('<b>'+feature.properties.trailname+'</b>')
         .addTo(map);
 
-    showElevationProfile(feature);
+    showElevationProfile(coords);
 }
 
-function showElevationProfile(feature){
+/* ---------- Elevation Profile ---------- */
+function showElevationProfile(coords){
 
-    const coords = feature.geometry.coordinates;
-
-    if(coords[0].length < 3){
+    if(!coords[0] || coords[0].length < 3){
         document.getElementById('profileContainer').style.display = 'none';
         return;
     }
@@ -205,11 +211,13 @@ function showElevationProfile(feature){
         elevations.push(coords[i][2]);
 
         if(i>0) dist += d(coords[i-1],coords[i]);
-
         distances.push((dist/1000).toFixed(2));
     }
 
     document.getElementById('profileContainer').style.display = 'block';
+
+    /* IMPORTANT for mobile */
+    map.resize();
 
     const ctx = document.getElementById('profileChart');
 
@@ -229,14 +237,15 @@ function showElevationProfile(feature){
         options:{
             responsive:true,
             maintainAspectRatio:false,
-            plugins:{ legend:{display:false} },
+            plugins:{legend:{display:false}},
             scales:{
-                x:{ title:{display:true,text:'Distance (km)'} },
-                y:{ title:{display:true,text:'Elevation (m)'} }
+                x:{title:{display:true,text:'Distance (km)'}},
+                y:{title:{display:true,text:'Elevation (m)'}}
             }
         }
     });
 }
 </script>
+
 </body>
 </html>
