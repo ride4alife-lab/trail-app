@@ -9,7 +9,7 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
 <style>
-body { margin:0; padding:0; font-family: Arial, sans-serif; }
+body { margin:0; font-family: Arial, sans-serif; }
 
 #map {
     position:absolute;
@@ -18,7 +18,7 @@ body { margin:0; padding:0; font-family: Arial, sans-serif; }
     width:100%;
 }
 
-/* Sidebar auto width */
+/* Sidebar – auto width */
 #sidebar {
     position:absolute;
     top:10px;
@@ -26,52 +26,30 @@ body { margin:0; padding:0; font-family: Arial, sans-serif; }
     background:white;
     padding:10px;
     border-radius:6px;
-    box-shadow:0 0 8px rgba(0,0,0,0.2);
-    max-height:80%;
-    overflow-y:auto;
+    box-shadow:0 0 8px rgba(0,0,0,0.25);
     z-index:2;
-    white-space:nowrap;
+    max-height:75vh;
+    overflow-y:auto;
     width:auto;
-    min-width:140px;
+    max-width:80vw;
 }
 
-/* Mobile */
+/* Mobile collapse */
 @media (max-width:600px){
-    #sidebar{
-        font-size:13px;
-        max-width:70%;
+    #sidebar.collapsed {
+        display:none;
     }
 }
 
 .trail-item {
-    padding:5px;
-    margin-bottom:4px;
-    border-radius:4px;
     cursor:pointer;
-}
-.trail-item:hover { background:#f0f0f0; }
-
-/* Buttons */
-.control-btn {
-    position:absolute;
-    right:15px;
-    z-index:3;
-    background:#0074D9;
-    color:white;
-    border:none;
-    padding:10px 14px;
-    border-radius:8px;
-    font-size:14px;
-    box-shadow:0 2px 8px rgba(0,0,0,0.3);
-    cursor:pointer;
+    padding:3px 0;
 }
 
-#centerBtn { bottom:90px; }
-#followBtn { bottom:50px; }
-#styleBtn  { bottom:10px; }
-
-.following {
-    background:#2ecc71 !important;
+.controls button {
+    display:block;
+    width:100%;
+    margin-top:4px;
 }
 </style>
 </head>
@@ -80,242 +58,188 @@ body { margin:0; padding:0; font-family: Arial, sans-serif; }
 <div id="sidebar">
 <b>Trails</b>
 <div id="trailList"></div>
-<hr>
-<div><span style="color:#2ecc71;">■■</span> Easy</div>
-<div><span style="color:#0074D9;">■■</span> Intermediate</div>
-<div><span style="color:#000000;">■■</span> Advanced</div>
-</div>
 
-<button id="centerBtn" class="control-btn">Center</button>
-<button id="followBtn" class="control-btn">Follow</button>
-<button id="styleBtn" class="control-btn">Terrain</button>
+<hr>
+
+<div>■ Easy</div>
+<div>■ Intermediate</div>
+<div>■ Advanced</div>
+
+<hr>
+
+<div class="controls">
+<button id="centerBtn">Center on Me</button>
+<button id="followBtn">Follow: OFF</button>
+<button id="styleBtn">Terrain</button>
+</div>
+</div>
 
 <div id="map"></div>
 
 <script>
-// ---- Service Worker (offline) ----
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js');
-}
-
-// ---- Mapbox token ----
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
-let currentStyle = 'streets';
-let following = false;
-let watchId = null;
-let trailsData = null;
+let followMode = false;
 let userMarker = null;
-let activePopup = null;
+let watchId = null;
+let currentPopup = null;
+let currentStyle = 'streets';
 
-// ---- Map ----
 const map = new mapboxgl.Map({
     container:'map',
     style:'mapbox://styles/mapbox/streets-v12',
-    center:[-105.0633,39.9223],
-    zoom:14
+    center:[-105.063,39.922],
+    zoom:15
 });
-
-// ---- Load trails ----
-function loadTrails(){
-
-    const url = 'map.geojson?v=6';
-
-    if(map.getSource('trails')){
-        map.removeLayer('trail-lines');
-        map.removeLayer('trail-highlight');
-        map.removeSource('trails');
-    }
-
-    map.addSource('trails',{
-        type:'geojson',
-        data:url
-    });
-
-    map.addLayer({
-        id:'trail-lines',
-        type:'line',
-        source:'trails',
-        paint:{
-            'line-width':5,
-            'line-color':[
-                'match',
-                ['downcase',['get','traildifficulty']],
-                'easy','#2ecc71',
-                'intermediate','#0074D9',
-                'advanced','#000000',
-                '#ff0000'
-            ]
-        }
-    });
-
-    // Gold highlight layer
-    map.addLayer({
-        id:'trail-highlight',
-        type:'line',
-        source:'trails',
-        paint:{
-            'line-width':8,
-            'line-color':'#FFD700'
-        },
-        filter:['==','trailnumber','']
-    });
-
-    fetch(url)
-        .then(r=>r.json())
-        .then(data=>{
-            trailsData = data;
-            buildSidebar(data);
-        });
-}
 
 map.on('load', loadTrails);
 
-// ---- Sidebar ----
+/* ---------- Style Toggle ---------- */
+document.getElementById('styleBtn').onclick = function(){
+    currentStyle = (currentStyle === 'streets') ? 'outdoors' : 'streets';
+    map.setStyle('mapbox://styles/mapbox/' + currentStyle + '-v12');
+    map.once('style.load', loadTrails);
+};
+
+/* ---------- Location ---------- */
+function startLocation(centerOnce){
+    if(!navigator.geolocation) return;
+
+    if(watchId) navigator.geolocation.clearWatch(watchId);
+
+    watchId = navigator.geolocation.watchPosition(pos => {
+        const lng = pos.coords.longitude;
+        const lat = pos.coords.latitude;
+
+        if(!userMarker){
+            userMarker = new mapboxgl.Marker({color:'#0074D9'})
+                .setLngLat([lng,lat])
+                .addTo(map);
+        } else {
+            userMarker.setLngLat([lng,lat]);
+        }
+
+        if(centerOnce || followMode){
+            map.easeTo({center:[lng,lat], duration:500});
+        }
+
+    }, err => console.log(err), {
+        enableHighAccuracy:true,
+        maximumAge:5000
+    });
+}
+
+document.getElementById('centerBtn').onclick = () => startLocation(true);
+
+document.getElementById('followBtn').onclick = function(){
+    followMode = !followMode;
+    this.textContent = 'Follow: ' + (followMode ? 'ON' : 'OFF');
+    if(followMode) startLocation(false);
+};
+
+/* ---------- Trails ---------- */
+function loadTrails(){
+
+    fetch('map.geojson?v=1')
+    .then(r => r.json())
+    .then(data => {
+
+        if(map.getSource('trails')){
+            map.removeLayer('trail-lines');
+            map.removeLayer('trail-highlight');
+            map.removeSource('trails');
+        }
+
+        map.addSource('trails',{
+            type:'geojson',
+            data:data
+        });
+
+        // Difficulty colors
+        map.addLayer({
+            id:'trail-lines',
+            type:'line',
+            source:'trails',
+            paint:{
+                'line-width':4,
+                'line-color':[
+                    'match',
+                    ['downcase',['get','traildifficulty']],
+                    'easy','#2ecc71',
+                    'intermediate','#0074D9',
+                    'advanced','#000000',
+                    '#ff0000'
+                ]
+            }
+        });
+
+        // Gold highlight
+        map.addLayer({
+            id:'trail-highlight',
+            type:'line',
+            source:'trails',
+            paint:{
+                'line-width':8,
+                'line-color':'#FFD700'
+            },
+            filter:['==','trailnumber','']
+        });
+
+        buildSidebar(data);
+
+        map.on('click','trail-lines', e=>{
+            selectTrail(e.features[0]);
+        });
+    });
+}
+
+/* ---------- Sidebar ---------- */
 function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
 
     data.features.forEach(f=>{
-        const p = f.properties;
         const item = document.createElement('div');
         item.className = 'trail-item';
-        item.textContent = p.trailnumber + ' – ' + p.trailname;
-
-        item.onclick = ()=>{
-            zoomToTrail(f);
-            showPopup(f);
-            highlightTrail(p.trailnumber);
-        };
-
+        item.textContent = f.properties.trailnumber + ' – ' + f.properties.trailname;
+        item.onclick = () => selectTrail(f);
         list.appendChild(item);
     });
 }
 
-// ---- Popup (single only) ----
-function showPopup(feature){
+/* ---------- Select Trail ---------- */
+function selectTrail(feature){
 
-    if(activePopup) activePopup.remove();
+    if(currentPopup) currentPopup.remove();
+
+    map.setFilter('trail-highlight',
+        ['==',
+            ['to-string',['get','trailnumber']],
+            String(feature.properties.trailnumber)
+        ]
+    );
 
     const coords = feature.geometry.coordinates;
-    const mid = coords[Math.floor(coords.length/2)];
-    const p = feature.properties;
 
-    activePopup = new mapboxgl.Popup()
-        .setLngLat(mid)
-        .setHTML(`<b>${p.trailname} (${p.trailnumber})</b><br>${p.traildifficulty}`)
-        .addTo(map);
-}
-
-// Click on map trail
-map.on('click','trail-lines', e=>{
-    const f = e.features[0];
-    showPopup(f);
-    highlightTrail(f.properties.trailnumber);
-});
-
-// ---- Highlight ----
-function highlightTrail(num){
-    map.setFilter('trail-highlight',['==','trailnumber',String(num)]);
-}
-
-// ---- Zoom ----
-function zoomToTrail(f){
-    const coords = f.geometry.coordinates;
-    const bounds = coords.reduce(
-        (b,c)=>b.extend(c),
+    const bounds = coords.reduce((b,c)=>b.extend(c),
         new mapboxgl.LngLatBounds(coords[0],coords[0])
     );
+
     map.fitBounds(bounds,{padding:40});
-}
 
-// ---- Blue location dot ----
-function createDot(){
-    const el = document.createElement('div');
-    el.style.width='16px';
-    el.style.height='16px';
-    el.style.borderRadius='50%';
-    el.style.background='#0074D9';
-    el.style.border='3px solid white';
-    el.style.boxShadow='0 0 6px rgba(0,0,0,0.5)';
-    return el;
-}
+    const mid = coords[Math.floor(coords.length/2)];
 
-function updateLocation(lat,lon){
+    currentPopup = new mapboxgl.Popup()
+        .setLngLat(mid)
+        .setHTML('<b>'+feature.properties.trailname+'</b>')
+        .addTo(map);
 
-    if(!userMarker){
-        userMarker = new mapboxgl.Marker(createDot())
-            .setLngLat([lon,lat])
-            .addTo(map);
-    }else{
-        userMarker.setLngLat([lon,lat]);
-    }
-
-    // nearest trail highlight
-    if(trailsData){
-        let nearest=null;
-        let min=Infinity;
-
-        trailsData.features.forEach(f=>{
-            f.geometry.coordinates.forEach(c=>{
-                const d=Math.hypot(c[0]-lon,c[1]-lat);
-                if(d<min){
-                    min=d;
-                    nearest=f.properties.trailnumber;
-                }
-            });
-        });
-
-        if(nearest) highlightTrail(nearest);
-    }
-
-    if(following){
-        map.easeTo({center:[lon,lat],duration:400});
+    // Collapse sidebar on phone
+    if(window.innerWidth < 600){
+        document.getElementById('sidebar').classList.add('collapsed');
     }
 }
-
-// ---- Center once ----
-document.getElementById('centerBtn').onclick=()=>{
-    navigator.geolocation.getCurrentPosition(p=>{
-        updateLocation(p.coords.latitude,p.coords.longitude);
-        map.easeTo({
-            center:[p.coords.longitude,p.coords.latitude],
-            zoom:16
-        });
-    });
-};
-
-// ---- Follow toggle ----
-document.getElementById('followBtn').onclick=function(){
-    following=!following;
-    this.classList.toggle('following',following);
-
-    if(following){
-        watchId = navigator.geolocation.watchPosition(
-            p=>updateLocation(p.coords.latitude,p.coords.longitude),
-            e=>alert(e.message),
-            {enableHighAccuracy:true}
-        );
-    }else{
-        if(watchId) navigator.geolocation.clearWatch(watchId);
-    }
-};
-
-// ---- Terrain toggle ----
-document.getElementById('styleBtn').onclick=function(){
-
-    if(currentStyle==='streets'){
-        currentStyle='terrain';
-        this.textContent='Streets';
-        map.setStyle('mapbox://styles/mapbox/outdoors-v12');
-    }else{
-        currentStyle='streets';
-        this.textContent='Terrain';
-        map.setStyle('mapbox://styles/mapbox/streets-v12');
-    }
-
-    map.once('style.load', loadTrails);
-};
 </script>
+
 </body>
 </html>
