@@ -7,6 +7,7 @@
 
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 body { margin:0; font-family: Arial, sans-serif; }
@@ -14,11 +15,11 @@ body { margin:0; font-family: Arial, sans-serif; }
 #map {
     position:absolute;
     top:0;
-    bottom:0;
+    bottom:180px;
     width:100%;
 }
 
-/* Sidebar – auto width */
+/* Sidebar */
 #sidebar {
     position:absolute;
     top:10px;
@@ -28,17 +29,14 @@ body { margin:0; font-family: Arial, sans-serif; }
     border-radius:6px;
     box-shadow:0 0 8px rgba(0,0,0,0.25);
     z-index:2;
-    max-height:75vh;
+    max-height:70vh;
     overflow-y:auto;
     width:auto;
     max-width:80vw;
 }
 
-/* Mobile collapse */
 @media (max-width:600px){
-    #sidebar.collapsed {
-        display:none;
-    }
+    #sidebar.collapsed { display:none; }
 }
 
 .trail-item {
@@ -46,10 +44,17 @@ body { margin:0; font-family: Arial, sans-serif; }
     padding:3px 0;
 }
 
-.controls button {
-    display:block;
+/* Elevation panel */
+#profileContainer {
+    position:absolute;
+    bottom:0;
+    left:0;
     width:100%;
-    margin-top:4px;
+    height:180px;
+    background:white;
+    box-shadow:0 -2px 6px rgba(0,0,0,0.3);
+    display:none;
+    z-index:3;
 }
 </style>
 </head>
@@ -58,104 +63,44 @@ body { margin:0; font-family: Arial, sans-serif; }
 <div id="sidebar">
 <b>Trails</b>
 <div id="trailList"></div>
-
 <hr>
-
 <div>■ Easy</div>
 <div>■ Intermediate</div>
 <div>■ Advanced</div>
-
-<hr>
-
-<div class="controls">
-<button id="centerBtn">Center on Me</button>
-<button id="followBtn">Follow: OFF</button>
-<button id="styleBtn">Terrain</button>
-</div>
 </div>
 
 <div id="map"></div>
 
+<div id="profileContainer">
+<canvas id="profileChart"></canvas>
+</div>
+
 <script>
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
-let followMode = false;
-let userMarker = null;
-let watchId = null;
 let currentPopup = null;
-let currentStyle = 'streets';
+let profileChart = null;
 
 const map = new mapboxgl.Map({
     container:'map',
-    style:'mapbox://styles/mapbox/streets-v12',
-    center:[-105.063,39.922],
-    zoom:15
+    style:'mapbox://styles/mapbox/outdoors-v12',
+    center:[-105.0633,39.9223],
+    zoom:14
 });
 
 map.on('load', loadTrails);
 
-/* ---------- Style Toggle ---------- */
-document.getElementById('styleBtn').onclick = function(){
-    currentStyle = (currentStyle === 'streets') ? 'outdoors' : 'streets';
-    map.setStyle('mapbox://styles/mapbox/' + currentStyle + '-v12');
-    map.once('style.load', loadTrails);
-};
-
-/* ---------- Location ---------- */
-function startLocation(centerOnce){
-    if(!navigator.geolocation) return;
-
-    if(watchId) navigator.geolocation.clearWatch(watchId);
-
-    watchId = navigator.geolocation.watchPosition(pos => {
-        const lng = pos.coords.longitude;
-        const lat = pos.coords.latitude;
-
-        if(!userMarker){
-            userMarker = new mapboxgl.Marker({color:'#0074D9'})
-                .setLngLat([lng,lat])
-                .addTo(map);
-        } else {
-            userMarker.setLngLat([lng,lat]);
-        }
-
-        if(centerOnce || followMode){
-            map.easeTo({center:[lng,lat], duration:500});
-        }
-
-    }, err => console.log(err), {
-        enableHighAccuracy:true,
-        maximumAge:5000
-    });
-}
-
-document.getElementById('centerBtn').onclick = () => startLocation(true);
-
-document.getElementById('followBtn').onclick = function(){
-    followMode = !followMode;
-    this.textContent = 'Follow: ' + (followMode ? 'ON' : 'OFF');
-    if(followMode) startLocation(false);
-};
-
-/* ---------- Trails ---------- */
 function loadTrails(){
 
     fetch('map.geojson?v=1')
-    .then(r => r.json())
-    .then(data => {
-
-        if(map.getSource('trails')){
-            map.removeLayer('trail-lines');
-            map.removeLayer('trail-highlight');
-            map.removeSource('trails');
-        }
+    .then(r=>r.json())
+    .then(data=>{
 
         map.addSource('trails',{
             type:'geojson',
             data:data
         });
 
-        // Difficulty colors
         map.addLayer({
             id:'trail-lines',
             type:'line',
@@ -173,7 +118,6 @@ function loadTrails(){
             }
         });
 
-        // Gold highlight
         map.addLayer({
             id:'trail-highlight',
             type:'line',
@@ -193,7 +137,6 @@ function loadTrails(){
     });
 }
 
-/* ---------- Sidebar ---------- */
 function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
@@ -202,12 +145,11 @@ function buildSidebar(data){
         const item = document.createElement('div');
         item.className = 'trail-item';
         item.textContent = f.properties.trailnumber + ' – ' + f.properties.trailname;
-        item.onclick = () => selectTrail(f);
+        item.onclick = ()=>selectTrail(f);
         list.appendChild(item);
     });
 }
 
-/* ---------- Select Trail ---------- */
 function selectTrail(feature){
 
     if(currentPopup) currentPopup.remove();
@@ -224,7 +166,6 @@ function selectTrail(feature){
     const bounds = coords.reduce((b,c)=>b.extend(c),
         new mapboxgl.LngLatBounds(coords[0],coords[0])
     );
-
     map.fitBounds(bounds,{padding:40});
 
     const mid = coords[Math.floor(coords.length/2)];
@@ -234,12 +175,68 @@ function selectTrail(feature){
         .setHTML('<b>'+feature.properties.trailname+'</b>')
         .addTo(map);
 
-    // Collapse sidebar on phone
-    if(window.innerWidth < 600){
-        document.getElementById('sidebar').classList.add('collapsed');
+    showElevationProfile(feature);
+}
+
+function showElevationProfile(feature){
+
+    const coords = feature.geometry.coordinates;
+
+    if(coords[0].length < 3){
+        document.getElementById('profileContainer').style.display = 'none';
+        return;
     }
+
+    let dist = 0;
+    const distances = [];
+    const elevations = [];
+
+    function d(a,b){
+        const R = 6371000;
+        const toRad = x => x*Math.PI/180;
+        const dLat = toRad(b[1]-a[1]);
+        const dLon = toRad(b[0]-a[0]);
+        const x = dLon * Math.cos(toRad((a[1]+b[1])/2));
+        const y = dLat;
+        return Math.sqrt(x*x + y*y) * R;
+    }
+
+    for(let i=0;i<coords.length;i++){
+        elevations.push(coords[i][2]);
+
+        if(i>0) dist += d(coords[i-1],coords[i]);
+
+        distances.push((dist/1000).toFixed(2));
+    }
+
+    document.getElementById('profileContainer').style.display = 'block';
+
+    const ctx = document.getElementById('profileChart');
+
+    if(profileChart) profileChart.destroy();
+
+    profileChart = new Chart(ctx,{
+        type:'line',
+        data:{
+            labels:distances,
+            datasets:[{
+                data:elevations,
+                borderColor:'#0074D9',
+                fill:true,
+                tension:0.1
+            }]
+        },
+        options:{
+            responsive:true,
+            maintainAspectRatio:false,
+            plugins:{ legend:{display:false} },
+            scales:{
+                x:{ title:{display:true,text:'Distance (km)'} },
+                y:{ title:{display:true,text:'Elevation (m)'} }
+            }
+        }
+    });
 }
 </script>
-
 </body>
 </html>
