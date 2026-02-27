@@ -18,73 +18,71 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
     width: 100%;
 }
 
+/* Sidebar */
 #sidebar {
     position: absolute;
     top: 10px;
     left: 10px;
     width: 220px;
-    max-height: 90%;
     background: white;
     padding: 10px;
     border-radius: 6px;
     box-shadow: 0 0 8px rgba(0,0,0,0.2);
-    overflow-y: auto;
-    z-index: 2;
+    z-index: 1;
 }
 
-.trail-item {
-    padding: 6px;
-    margin-bottom: 4px;
-    border-radius: 4px;
-    cursor: pointer;
+/* Smaller sidebar on mobile */
+@media (max-width: 600px) {
+    #sidebar {
+        width: 150px;
+        font-size: 13px;
+        opacity: 0.9;
+    }
 }
 
-.trail-item:hover {
-    background: #f0f0f0;
-}
-
-.legend {
-    margin-top: 8px;
-    font-size: 14px;
-}
-
-#gpsBtn {
+/* Center button */
+#locateBtn {
     position: absolute;
-    top: 10px;
-    right: 10px;
+    bottom: 20px;
+    right: 20px;
     z-index: 2;
-    padding: 10px;
-    background: white;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    background: #0074D9;
+    color: white;
+    border: none;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     cursor: pointer;
+}
+
+/* Hide button on desktop */
+@media (min-width: 700px) {
+    #locateBtn {
+        display: none;
+    }
 }
 </style>
 </head>
 <body>
 
 <div id="sidebar">
-<b>Trails</b>
-<div id="trailList"></div>
-
-<hr>
-
-<b>Difficulty</b>
-<div class="legend">
-<div><span style="color:#2ecc71;">■■</span> Easy</div>
-<div><span style="color:#0074D9;">■■</span> Intermediate</div>
-<div><span style="color:#000000;">■■</span> Advanced</div>
-</div>
+<b>Difficulty</b><br>
+<span style="color:#2ecc71;">■■</span> Easy<br>
+<span style="color:#0074D9;">■■</span> Intermediate<br>
+<span style="color:#000000;">■■</span> Advanced
 </div>
 
-<button id="gpsBtn">Center on Me</button>
+<button id="locateBtn">Center on Me</button>
 
 <div id="map"></div>
 
 <script>
 
+// Mapbox public token
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
+// Create map
 const map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/streets-v12',
@@ -92,16 +90,13 @@ const map = new mapboxgl.Map({
     zoom: 14
 });
 
-let trailData = null;
-let userMarker = null;
 
+// ---------- Load Trails ----------
 map.on('load', function () {
-
-    const dataUrl = 'map.geojson?v=100';
 
     map.addSource('trails', {
         type: 'geojson',
-        data: dataUrl
+        data: 'map.geojson?v=1'
     });
 
     map.addLayer({
@@ -121,128 +116,85 @@ map.on('load', function () {
         }
     });
 
-    map.addLayer({
-        id: 'trail-highlight',
-        type: 'line',
-        source: 'trails',
-        paint: {
-            'line-width': 8,
-            'line-color': '#FFD700'
-        },
-        filter: ['==', 'trailnumber', '']
-    });
-
-    fetch(dataUrl)
-        .then(r => r.json())
-        .then(data => {
-
-            trailData = data;
-
-            const list = document.getElementById('trailList');
-
-            data.features.forEach(feature => {
-
-                const props = feature.properties;
-                const coords = feature.geometry.coordinates;
-
-                const item = document.createElement('div');
-                item.className = 'trail-item';
-                item.textContent = props.trailnumber + ' – ' + props.trailname;
-
-                item.onclick = function () {
-
-                    map.setFilter('trail-highlight', ['==', 'trailnumber', String(props.trailnumber)]);
-
-                    const bounds = coords.reduce(
-                        (b, c) => b.extend(c),
-                        new mapboxgl.LngLatBounds(coords[0], coords[0])
-                    );
-
-                    map.fitBounds(bounds, { padding: 40 });
-                };
-
-                list.appendChild(item);
-            });
-
-            // Fit map to all trails
-            const bounds = new mapboxgl.LngLatBounds();
-            data.features.forEach(f => {
-                f.geometry.coordinates.forEach(c => bounds.extend(c));
-            });
-            map.fitBounds(bounds, { padding: 40 });
-
-        });
-
 });
 
-document.getElementById('gpsBtn').onclick = function () {
+
+// ---------- GPS Tracking ----------
+
+let userMarker = null;
+let trackingStarted = false;
+
+// Create blue dot
+function createUserDot() {
+    const el = document.createElement('div');
+    el.style.width = '16px';
+    el.style.height = '16px';
+    el.style.borderRadius = '50%';
+    el.style.background = '#0074D9';
+    el.style.border = '3px solid white';
+    el.style.boxShadow = '0 0 6px rgba(0,0,0,0.5)';
+    return el;
+}
+
+// Update user position
+function updateUserLocation(lat, lon) {
+
+    if (!userMarker) {
+        userMarker = new mapboxgl.Marker(createUserDot())
+            .setLngLat([lon, lat])
+            .addTo(map);
+    } else {
+        userMarker.setLngLat([lon, lat]);
+    }
+
+    // Follow user (navigation mode)
+    map.easeTo({
+        center: [lon, lat],
+        duration: 500
+    });
+}
+
+
+// Center on Me button
+document.getElementById('locateBtn').onclick = function () {
+
+    if (trackingStarted) return;
 
     if (!navigator.geolocation) {
-        alert('Geolocation not supported');
+        alert("Geolocation not supported");
         return;
     }
 
-    navigator.geolocation.getCurrentPosition(function(position) {
+    trackingStarted = true;
+    this.style.display = 'none';
 
-        const lng = position.coords.longitude;
-        const lat = position.coords.latitude;
-
-        map.flyTo({
-            center: [lng, lat],
-            zoom: 16
-        });
-
-        if (userMarker) userMarker.remove();
-
-        userMarker = new mapboxgl.Marker({ color: 'blue' })
-            .setLngLat([lng, lat])
-            .addTo(map);
-
-        if (trailData) {
-
-            let nearest = null;
-            let minDist = Infinity;
-
-            trailData.features.forEach(feature => {
-                feature.geometry.coordinates.forEach(coord => {
-
-                    const d = distance(lat, lng, coord[1], coord[0]);
-
-                    if (d < minDist) {
-                        minDist = d;
-                        nearest = feature.properties.trailnumber;
-                    }
-                });
-            });
-
-            if (nearest) {
-                map.setFilter('trail-highlight', ['==', 'trailnumber', String(nearest)]);
-            }
+    navigator.geolocation.watchPosition(
+        function(position) {
+            updateUserLocation(
+                position.coords.latitude,
+                position.coords.longitude
+            );
+        },
+        function(err) {
+            alert("Location error: " + err.message);
+        },
+        {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 10000
         }
-
-    }, function() {
-        alert('Location permission denied');
-    });
+    );
 };
 
-function distance(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-    const toRad = Math.PI / 180;
 
-    const dLat = (lat2 - lat1) * toRad;
-    const dLon = (lon2 - lon1) * toRad;
-
-    const a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * toRad) *
-        Math.cos(lat2 * toRad) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// ---------- Offline Support ----------
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+        .then(() => console.log('Service Worker registered'))
+        .catch(err => console.log('Service Worker failed:', err));
 }
 
 </script>
 
 </body>
-
 </html>
