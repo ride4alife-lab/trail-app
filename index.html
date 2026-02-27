@@ -9,69 +9,69 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
 <style>
-body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+body { margin:0; padding:0; font-family: Arial, sans-serif; }
 
 #map {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 100%;
+    position:absolute;
+    top:0;
+    bottom:0;
+    width:100%;
 }
 
-/* Sidebar */
+/* Sidebar auto width */
 #sidebar {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    width: 200px;
-    max-height: 80%;
-    background: white;
-    padding: 10px;
-    border-radius: 6px;
-    box-shadow: 0 0 8px rgba(0,0,0,0.2);
-    overflow-y: auto;
-    z-index: 2;
+    position:absolute;
+    top:10px;
+    left:10px;
+    background:white;
+    padding:10px;
+    border-radius:6px;
+    box-shadow:0 0 8px rgba(0,0,0,0.2);
+    max-height:80%;
+    overflow-y:auto;
+    z-index:2;
+    white-space:nowrap;
+    width:auto;
+    min-width:140px;
 }
 
-@media (max-width: 600px) {
-    #sidebar {
-        width: 150px;
-        font-size: 13px;
+/* Mobile */
+@media (max-width:600px){
+    #sidebar{
+        font-size:13px;
+        max-width:70%;
     }
 }
 
 .trail-item {
-    padding: 5px;
-    margin-bottom: 4px;
-    border-radius: 4px;
-    cursor: pointer;
+    padding:5px;
+    margin-bottom:4px;
+    border-radius:4px;
+    cursor:pointer;
 }
+.trail-item:hover { background:#f0f0f0; }
 
-.trail-item:hover {
-    background: #f0f0f0;
-}
-
-/* Control buttons */
+/* Buttons */
 .control-btn {
-    position: absolute;
-    right: 15px;
-    z-index: 3;
-    background: #0074D9;
-    color: white;
-    border: none;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    cursor: pointer;
+    position:absolute;
+    right:15px;
+    z-index:3;
+    background:#0074D9;
+    color:white;
+    border:none;
+    padding:10px 14px;
+    border-radius:8px;
+    font-size:14px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.3);
+    cursor:pointer;
 }
 
-#centerBtn { bottom: 90px; }
-#followBtn { bottom: 50px; }
-#styleBtn  { bottom: 10px; }
+#centerBtn { bottom:90px; }
+#followBtn { bottom:50px; }
+#styleBtn  { bottom:10px; }
 
 .following {
-    background: #2ecc71 !important;
+    background:#2ecc71 !important;
 }
 </style>
 </head>
@@ -86,14 +86,19 @@ body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
 <div><span style="color:#000000;">■■</span> Advanced</div>
 </div>
 
-<button id="centerBtn" class="control-btn">Center on Me</button>
+<button id="centerBtn" class="control-btn">Center</button>
 <button id="followBtn" class="control-btn">Follow</button>
 <button id="styleBtn" class="control-btn">Terrain</button>
 
 <div id="map"></div>
 
 <script>
+// ---- Service Worker (offline) ----
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+}
 
+// ---- Mapbox token ----
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
 let currentStyle = 'streets';
@@ -101,79 +106,85 @@ let following = false;
 let watchId = null;
 let trailsData = null;
 let userMarker = null;
+let activePopup = null;
 
-// Map
+// ---- Map ----
 const map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/streets-v12',
-    center: [-105.0633, 39.9223],
-    zoom: 14
+    container:'map',
+    style:'mapbox://styles/mapbox/streets-v12',
+    center:[-105.0633,39.9223],
+    zoom:14
 });
 
-// Reload layers after style change
-function loadTrailLayers() {
+// ---- Load trails ----
+function loadTrails(){
 
-    const dataUrl = 'map.geojson?v=2';
+    const url = 'map.geojson?v=6';
 
-    map.addSource('trails', {
-        type: 'geojson',
-        data: dataUrl
+    if(map.getSource('trails')){
+        map.removeLayer('trail-lines');
+        map.removeLayer('trail-highlight');
+        map.removeSource('trails');
+    }
+
+    map.addSource('trails',{
+        type:'geojson',
+        data:url
     });
 
-    // Base trails
     map.addLayer({
-        id: 'trail-lines',
-        type: 'line',
-        source: 'trails',
-        paint: {
-            'line-width': 5,
-            'line-color': [
+        id:'trail-lines',
+        type:'line',
+        source:'trails',
+        paint:{
+            'line-width':5,
+            'line-color':[
                 'match',
-                ['downcase', ['get', 'traildifficulty']],
-                'easy', '#2ecc71',
-                'intermediate', '#0074D9',
-                'advanced', '#000000',
+                ['downcase',['get','traildifficulty']],
+                'easy','#2ecc71',
+                'intermediate','#0074D9',
+                'advanced','#000000',
                 '#ff0000'
             ]
         }
     });
 
-    // Highlight (gold)
+    // Gold highlight layer
     map.addLayer({
-        id: 'trail-highlight',
-        type: 'line',
-        source: 'trails',
-        paint: {
-            'line-width': 8,
-            'line-color': '#FFD700'
+        id:'trail-highlight',
+        type:'line',
+        source:'trails',
+        paint:{
+            'line-width':8,
+            'line-color':'#FFD700'
         },
-        filter: ['==', 'trailnumber', '']
+        filter:['==','trailnumber','']
     });
 
-    fetch(dataUrl)
-        .then(r => r.json())
-        .then(data => {
+    fetch(url)
+        .then(r=>r.json())
+        .then(data=>{
             trailsData = data;
             buildSidebar(data);
         });
 }
 
-map.on('load', loadTrailLayers);
+map.on('load', loadTrails);
 
-// Sidebar
-function buildSidebar(data) {
+// ---- Sidebar ----
+function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
 
-    data.features.forEach(feature => {
-        const p = feature.properties;
+    data.features.forEach(f=>{
+        const p = f.properties;
         const item = document.createElement('div');
         item.className = 'trail-item';
         item.textContent = p.trailnumber + ' – ' + p.trailname;
 
-        item.onclick = () => {
-            zoomToTrail(feature);
-            showPopup(feature);
+        item.onclick = ()=>{
+            zoomToTrail(f);
+            showPopup(f);
             highlightTrail(p.trailnumber);
         };
 
@@ -181,129 +192,130 @@ function buildSidebar(data) {
     });
 }
 
-// Zoom helper
-function zoomToTrail(feature) {
-    const coords = feature.geometry.coordinates;
-    const bounds = coords.reduce(
-        (b, c) => b.extend(c),
-        new mapboxgl.LngLatBounds(coords[0], coords[0])
-    );
-    map.fitBounds(bounds, { padding: 40 });
-}
+// ---- Popup (single only) ----
+function showPopup(feature){
 
-// Popup
-function showPopup(feature) {
+    if(activePopup) activePopup.remove();
+
     const coords = feature.geometry.coordinates;
-    const mid = coords[Math.floor(coords.length / 2)];
+    const mid = coords[Math.floor(coords.length/2)];
     const p = feature.properties;
 
-    new mapboxgl.Popup()
+    activePopup = new mapboxgl.Popup()
         .setLngLat(mid)
-        .setHTML(`<b>${p.trailname} (${p.trailnumber})</b><br>Difficulty: ${p.traildifficulty}`)
+        .setHTML(`<b>${p.trailname} (${p.trailnumber})</b><br>${p.traildifficulty}`)
         .addTo(map);
 }
 
-// Highlight trail
-function highlightTrail(trailNumber) {
-    map.setFilter('trail-highlight', ['==', 'trailnumber', String(trailNumber)]);
-}
-
 // Click on map trail
-map.on('click', 'trail-lines', e => {
+map.on('click','trail-lines', e=>{
     const f = e.features[0];
     showPopup(f);
     highlightTrail(f.properties.trailnumber);
 });
 
-// User blue dot
-function createDot() {
+// ---- Highlight ----
+function highlightTrail(num){
+    map.setFilter('trail-highlight',['==','trailnumber',String(num)]);
+}
+
+// ---- Zoom ----
+function zoomToTrail(f){
+    const coords = f.geometry.coordinates;
+    const bounds = coords.reduce(
+        (b,c)=>b.extend(c),
+        new mapboxgl.LngLatBounds(coords[0],coords[0])
+    );
+    map.fitBounds(bounds,{padding:40});
+}
+
+// ---- Blue location dot ----
+function createDot(){
     const el = document.createElement('div');
-    el.style.width = '16px';
-    el.style.height = '16px';
-    el.style.borderRadius = '50%';
-    el.style.background = '#0074D9';
-    el.style.border = '3px solid white';
-    el.style.boxShadow = '0 0 6px rgba(0,0,0,0.5)';
+    el.style.width='16px';
+    el.style.height='16px';
+    el.style.borderRadius='50%';
+    el.style.background='#0074D9';
+    el.style.border='3px solid white';
+    el.style.boxShadow='0 0 6px rgba(0,0,0,0.5)';
     return el;
 }
 
-function updateLocation(lat, lon) {
+function updateLocation(lat,lon){
 
-    if (!userMarker) {
+    if(!userMarker){
         userMarker = new mapboxgl.Marker(createDot())
-            .setLngLat([lon, lat])
+            .setLngLat([lon,lat])
             .addTo(map);
-    } else {
-        userMarker.setLngLat([lon, lat]);
+    }else{
+        userMarker.setLngLat([lon,lat]);
     }
 
-    // Nearest trail
-    if (trailsData) {
-        let nearest = null;
-        let minDist = Infinity;
+    // nearest trail highlight
+    if(trailsData){
+        let nearest=null;
+        let min=Infinity;
 
-        trailsData.features.forEach(f => {
-            f.geometry.coordinates.forEach(c => {
-                const d = Math.hypot(c[0]-lon, c[1]-lat);
-                if (d < minDist) {
-                    minDist = d;
-                    nearest = f.properties.trailnumber;
+        trailsData.features.forEach(f=>{
+            f.geometry.coordinates.forEach(c=>{
+                const d=Math.hypot(c[0]-lon,c[1]-lat);
+                if(d<min){
+                    min=d;
+                    nearest=f.properties.trailnumber;
                 }
             });
         });
 
-        if (nearest) highlightTrail(nearest);
+        if(nearest) highlightTrail(nearest);
     }
 
-    if (following) {
-        map.easeTo({ center: [lon, lat], duration: 500 });
+    if(following){
+        map.easeTo({center:[lon,lat],duration:400});
     }
 }
 
-// Center button
-document.getElementById('centerBtn').onclick = () => {
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            const { latitude, longitude } = pos.coords;
-            updateLocation(latitude, longitude);
-            map.easeTo({ center: [longitude, latitude], zoom: 16 });
-        }
-    );
+// ---- Center once ----
+document.getElementById('centerBtn').onclick=()=>{
+    navigator.geolocation.getCurrentPosition(p=>{
+        updateLocation(p.coords.latitude,p.coords.longitude);
+        map.easeTo({
+            center:[p.coords.longitude,p.coords.latitude],
+            zoom:16
+        });
+    });
 };
 
-// Follow toggle
-document.getElementById('followBtn').onclick = function() {
+// ---- Follow toggle ----
+document.getElementById('followBtn').onclick=function(){
+    following=!following;
+    this.classList.toggle('following',following);
 
-    following = !following;
-    this.classList.toggle('following', following);
-
-    if (following) {
+    if(following){
         watchId = navigator.geolocation.watchPosition(
-            pos => updateLocation(pos.coords.latitude, pos.coords.longitude),
-            err => alert(err.message),
-            { enableHighAccuracy: true }
+            p=>updateLocation(p.coords.latitude,p.coords.longitude),
+            e=>alert(e.message),
+            {enableHighAccuracy:true}
         );
-    } else {
-        if (watchId) navigator.geolocation.clearWatch(watchId);
+    }else{
+        if(watchId) navigator.geolocation.clearWatch(watchId);
     }
 };
 
-// Style toggle
-document.getElementById('styleBtn').onclick = function() {
+// ---- Terrain toggle ----
+document.getElementById('styleBtn').onclick=function(){
 
-    if (currentStyle === 'streets') {
-        currentStyle = 'outdoors';
-        this.textContent = 'Streets';
+    if(currentStyle==='streets'){
+        currentStyle='terrain';
+        this.textContent='Streets';
         map.setStyle('mapbox://styles/mapbox/outdoors-v12');
-    } else {
-        currentStyle = 'streets';
-        this.textContent = 'Terrain';
+    }else{
+        currentStyle='streets';
+        this.textContent='Terrain';
         map.setStyle('mapbox://styles/mapbox/streets-v12');
     }
 
-    map.once('style.load', loadTrailLayers);
+    map.once('style.load', loadTrails);
 };
-
 </script>
 </body>
 </html>
