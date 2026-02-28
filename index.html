@@ -5,6 +5,11 @@
 <title>Trail App</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+<!-- Prevent aggressive mobile caching -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 <script src="chart.js"></script>
@@ -20,6 +25,7 @@ body { margin:0; font-family: Arial, sans-serif; }
     bottom:0;
 }
 
+/* Sidebar */
 #sidebar {
     position:absolute;
     top:10px;
@@ -40,6 +46,32 @@ body { margin:0; font-family: Arial, sans-serif; }
 .legend-row { display:flex; align-items:center; gap:6px; }
 .legend-box { width:14px; height:14px; }
 
+/* GPS buttons */
+#gpsControls {
+    position:absolute;
+    top:10px;
+    right:10px;
+    z-index:3;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+}
+
+.gps-btn {
+    background:white;
+    border:none;
+    padding:8px 10px;
+    border-radius:6px;
+    box-shadow:0 0 6px rgba(0,0,0,0.3);
+    font-size:14px;
+}
+
+.gps-btn.active {
+    background:#0074D9;
+    color:white;
+}
+
+/* Elevation panel */
 #profileContainer {
     position:fixed;
     left:0;
@@ -58,13 +90,16 @@ body { margin:0; font-family: Arial, sans-serif; }
 <div id="sidebar">
 <b>Trails</b>
 <div id="trailList"></div>
-
 <hr>
-
 <b>Difficulty</b>
 <div class="legend-row"><div class="legend-box" style="background:#2ecc71;"></div> Easy</div>
 <div class="legend-row"><div class="legend-box" style="background:#0074D9;"></div> Intermediate</div>
 <div class="legend-row"><div class="legend-box" style="background:#000000;"></div> Advanced</div>
+</div>
+
+<div id="gpsControls">
+<button id="centerBtn" class="gps-btn">Center</button>
+<button id="followBtn" class="gps-btn">Follow</button>
 </div>
 
 <div id="map"></div>
@@ -79,7 +114,9 @@ mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwY
 let currentPopup = null;
 let profileChart = null;
 let fullGeoJSON = null;
+let followMode = false;
 
+/* Map */
 const map = new mapboxgl.Map({
     container:'map',
     style:'mapbox://styles/mapbox/outdoors-v12',
@@ -87,20 +124,45 @@ const map = new mapboxgl.Map({
     zoom:14
 });
 
-map.on('load', loadTrails);
+/* Blue GPS dot */
+const geolocate = new mapboxgl.GeolocateControl({
+    positionOptions:{ enableHighAccuracy:true },
+    trackUserLocation:true,
+    showUserHeading:true
+});
 
-function loadTrails(){
+map.addControl(geolocate);
 
-    fetch('map.geojson?v=11')
+/* GPS buttons */
+document.getElementById('centerBtn').onclick = () => {
+    geolocate.trigger();
+};
+
+document.getElementById('followBtn').onclick = () => {
+    followMode = !followMode;
+    document.getElementById('followBtn').classList.toggle('active', followMode);
+};
+
+/* Follow logic */
+geolocate.on('geolocate', e => {
+    if(followMode){
+        map.easeTo({
+            center:[e.coords.longitude, e.coords.latitude],
+            duration:500
+        });
+    }
+});
+
+/* Load trails */
+map.on('load', () => {
+
+    fetch('map.geojson?v=20')
     .then(r=>r.json())
     .then(data=>{
 
-        fullGeoJSON = data;   // STORE FULL DATA WITH ELEVATION
+        fullGeoJSON = data;
 
-        map.addSource('trails',{
-            type:'geojson',
-            data:data
-        });
+        map.addSource('trails',{ type:'geojson', data:data });
 
         map.addLayer({
             id:'trail-lines',
@@ -135,19 +197,16 @@ function loadTrails(){
         map.on('click','trail-lines', e=>{
             const number = e.features[0].properties.trailnumber;
 
-            // LOOK UP FULL FEATURE (with elevation)
             const fullFeature = fullGeoJSON.features.find(f =>
                 String(f.properties.trailnumber) === String(number)
             );
 
             if(fullFeature) selectTrail(fullFeature);
         });
-
-        map.on('mouseenter','trail-lines',()=>map.getCanvas().style.cursor='pointer');
-        map.on('mouseleave','trail-lines',()=>map.getCanvas().style.cursor='');
     });
-}
+});
 
+/* Sidebar */
 function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
@@ -161,6 +220,7 @@ function buildSidebar(data){
     });
 }
 
+/* Select trail */
 function selectTrail(feature){
 
     if(currentPopup) currentPopup.remove();
@@ -185,15 +245,13 @@ function selectTrail(feature){
 
     currentPopup = new mapboxgl.Popup()
         .setLngLat(mid)
-        .setHTML(
-            '<b>' + props.trailname + ' (' + props.trailnumber + ')</b><br>' +
-            'Difficulty: ' + props.traildifficulty
-        )
+        .setHTML('<b>'+props.trailname+' ('+props.trailnumber+')</b>')
         .addTo(map);
 
     showElevationProfile(coords);
 }
 
+/* Elevation profile */
 function showElevationProfile(coords){
 
     if(typeof Chart === 'undefined') return;
@@ -214,7 +272,6 @@ function showElevationProfile(coords){
 
     for(let i=0;i<coords.length;i++){
         elevations.push(coords[i][2] || 0);
-
         if(i>0) dist += d(coords[i-1],coords[i]);
         distances.push((dist/1000).toFixed(2));
     }
