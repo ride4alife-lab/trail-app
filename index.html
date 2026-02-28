@@ -7,8 +7,6 @@
 
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-
-<!-- Local Chart.js for offline -->
 <script src="chart.js"></script>
 
 <style>
@@ -22,7 +20,6 @@ body { margin:0; font-family: Arial, sans-serif; }
     bottom:0;
 }
 
-/* Sidebar */
 #sidebar {
     position:absolute;
     top:10px;
@@ -38,24 +35,11 @@ body { margin:0; font-family: Arial, sans-serif; }
     max-width:80vw;
 }
 
-.trail-item {
-    cursor:pointer;
-    padding:3px 0;
-}
+.trail-item { cursor:pointer; padding:3px 0; }
 
-/* Legend color squares */
-.legend-row {
-    display:flex;
-    align-items:center;
-    gap:6px;
-}
+.legend-row { display:flex; align-items:center; gap:6px; }
+.legend-box { width:14px; height:14px; }
 
-.legend-box {
-    width:14px;
-    height:14px;
-}
-
-/* Elevation panel */
 #profileContainer {
     position:fixed;
     left:0;
@@ -78,15 +62,9 @@ body { margin:0; font-family: Arial, sans-serif; }
 <hr>
 
 <b>Difficulty</b>
-<div class="legend-row">
-<div class="legend-box" style="background:#2ecc71;"></div> Easy
-</div>
-<div class="legend-row">
-<div class="legend-box" style="background:#0074D9;"></div> Intermediate
-</div>
-<div class="legend-row">
-<div class="legend-box" style="background:#000000;"></div> Advanced
-</div>
+<div class="legend-row"><div class="legend-box" style="background:#2ecc71;"></div> Easy</div>
+<div class="legend-row"><div class="legend-box" style="background:#0074D9;"></div> Intermediate</div>
+<div class="legend-row"><div class="legend-box" style="background:#000000;"></div> Advanced</div>
 </div>
 
 <div id="map"></div>
@@ -100,7 +78,7 @@ mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwY
 
 let currentPopup = null;
 let profileChart = null;
-let trailData = null;
+let fullGeoJSON = null;
 
 const map = new mapboxgl.Map({
     container:'map',
@@ -111,14 +89,13 @@ const map = new mapboxgl.Map({
 
 map.on('load', loadTrails);
 
-/* ---------- Load Trails ---------- */
 function loadTrails(){
 
-    fetch('map.geojson?v=4')
+    fetch('map.geojson?v=11')
     .then(r=>r.json())
     .then(data=>{
 
-        trailData = data;
+        fullGeoJSON = data;   // STORE FULL DATA WITH ELEVATION
 
         map.addSource('trails',{
             type:'geojson',
@@ -155,9 +132,15 @@ function loadTrails(){
 
         buildSidebar(data);
 
-        /* Map click now uses SAME function */
         map.on('click','trail-lines', e=>{
-            selectTrail(e.features[0]);
+            const number = e.features[0].properties.trailnumber;
+
+            // LOOK UP FULL FEATURE (with elevation)
+            const fullFeature = fullGeoJSON.features.find(f =>
+                String(f.properties.trailnumber) === String(number)
+            );
+
+            if(fullFeature) selectTrail(fullFeature);
         });
 
         map.on('mouseenter','trail-lines',()=>map.getCanvas().style.cursor='pointer');
@@ -165,7 +148,6 @@ function loadTrails(){
     });
 }
 
-/* ---------- Sidebar ---------- */
 function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
@@ -179,15 +161,12 @@ function buildSidebar(data){
     });
 }
 
-/* ---------- Select Trail (single source of truth) ---------- */
 function selectTrail(feature){
+
+    if(currentPopup) currentPopup.remove();
 
     const props = feature.properties;
 
-    /* Remove previous popup */
-    if(currentPopup) currentPopup.remove();
-
-    /* Highlight */
     map.setFilter('trail-highlight',
         ['==',
             ['to-string',['get','trailnumber']],
@@ -197,13 +176,11 @@ function selectTrail(feature){
 
     const coords = feature.geometry.coordinates;
 
-    /* Zoom */
     const bounds = coords.reduce((b,c)=>b.extend(c),
         new mapboxgl.LngLatBounds(coords[0],coords[0])
     );
     map.fitBounds(bounds,{padding:40});
 
-    /* Popup WITH number */
     const mid = coords[Math.floor(coords.length/2)];
 
     currentPopup = new mapboxgl.Popup()
@@ -217,7 +194,6 @@ function selectTrail(feature){
     showElevationProfile(coords);
 }
 
-/* ---------- Elevation Profile ---------- */
 function showElevationProfile(coords){
 
     if(typeof Chart === 'undefined') return;
