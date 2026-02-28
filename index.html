@@ -8,8 +8,8 @@
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-<!-- Chart.js (may fail offline) -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- LOCAL Chart.js (offline) -->
+<script src="chart.js"></script>
 
 <style>
 body { margin:0; font-family: Arial, sans-serif; }
@@ -22,6 +22,7 @@ body { margin:0; font-family: Arial, sans-serif; }
     bottom:0;
 }
 
+/* Sidebar */
 #sidebar {
     position:absolute;
     top:10px;
@@ -42,6 +43,7 @@ body { margin:0; font-family: Arial, sans-serif; }
     padding:3px 0;
 }
 
+/* Elevation panel (mobile safe) */
 #profileContainer {
     position:fixed;
     left:0;
@@ -52,12 +54,6 @@ body { margin:0; font-family: Arial, sans-serif; }
     box-shadow:0 -2px 6px rgba(0,0,0,0.3);
     display:none;
     z-index:999;
-}
-
-#profileMessage {
-    padding:20px;
-    text-align:center;
-    font-size:14px;
 }
 </style>
 </head>
@@ -76,9 +72,6 @@ body { margin:0; font-family: Arial, sans-serif; }
 
 <div id="profileContainer">
 <canvas id="profileChart"></canvas>
-<div id="profileMessage" style="display:none;">
-Elevation profile unavailable (offline)
-</div>
 </div>
 
 <script>
@@ -96,9 +89,10 @@ const map = new mapboxgl.Map({
 
 map.on('load', loadTrails);
 
+/* ---------- Load Trails ---------- */
 function loadTrails(){
 
-    fetch('map.geojson?v=2')
+    fetch('map.geojson?v=3')
     .then(r=>r.json())
     .then(data=>{
 
@@ -143,6 +137,7 @@ function loadTrails(){
     });
 }
 
+/* ---------- Sidebar ---------- */
 function buildSidebar(data){
     const list = document.getElementById('trailList');
     list.innerHTML = '';
@@ -156,6 +151,7 @@ function buildSidebar(data){
     });
 }
 
+/* ---------- Select Trail ---------- */
 function selectTrail(feature){
 
     if(currentPopup) currentPopup.remove();
@@ -184,20 +180,13 @@ function selectTrail(feature){
     showElevationProfile(coords);
 }
 
+/* ---------- Elevation Profile ---------- */
 function showElevationProfile(coords){
 
-    document.getElementById('profileContainer').style.display = 'block';
-    map.resize();
-
-    // If Chart.js failed to load
     if(typeof Chart === 'undefined'){
-        document.getElementById('profileChart').style.display = 'none';
-        document.getElementById('profileMessage').style.display = 'block';
+        console.log("Chart.js not loaded");
         return;
     }
-
-    document.getElementById('profileChart').style.display = 'block';
-    document.getElementById('profileMessage').style.display = 'none';
 
     let dist = 0;
     const distances = [];
@@ -214,15 +203,14 @@ function showElevationProfile(coords){
     }
 
     for(let i=0;i<coords.length;i++){
-        if(coords[i].length >= 3){
-            elevations.push(coords[i][2]);
-        } else {
-            elevations.push(0);
-        }
+        elevations.push(coords[i][2] || 0);
 
         if(i>0) dist += d(coords[i-1],coords[i]);
         distances.push((dist/1000).toFixed(2));
     }
+
+    document.getElementById('profileContainer').style.display = 'block';
+    map.resize();
 
     const ctx = document.getElementById('profileChart');
 
@@ -242,7 +230,11 @@ function showElevationProfile(coords){
         options:{
             responsive:true,
             maintainAspectRatio:false,
-            plugins:{legend:{display:false}}
+            plugins:{legend:{display:false}},
+            scales:{
+                x:{title:{display:true,text:'Distance (km)'}},
+                y:{title:{display:true,text:'Elevation (m)'}}
+            }
         }
     });
 }
