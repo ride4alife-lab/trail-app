@@ -8,7 +8,7 @@
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
-<!-- LOCAL Chart.js (offline) -->
+<!-- Local Chart.js for offline -->
 <script src="chart.js"></script>
 
 <style>
@@ -43,7 +43,19 @@ body { margin:0; font-family: Arial, sans-serif; }
     padding:3px 0;
 }
 
-/* Elevation panel (mobile safe) */
+/* Legend color squares */
+.legend-row {
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+
+.legend-box {
+    width:14px;
+    height:14px;
+}
+
+/* Elevation panel */
 #profileContainer {
     position:fixed;
     left:0;
@@ -62,10 +74,19 @@ body { margin:0; font-family: Arial, sans-serif; }
 <div id="sidebar">
 <b>Trails</b>
 <div id="trailList"></div>
+
 <hr>
-<div>■ Easy</div>
-<div>■ Intermediate</div>
-<div>■ Advanced</div>
+
+<b>Difficulty</b>
+<div class="legend-row">
+<div class="legend-box" style="background:#2ecc71;"></div> Easy
+</div>
+<div class="legend-row">
+<div class="legend-box" style="background:#0074D9;"></div> Intermediate
+</div>
+<div class="legend-row">
+<div class="legend-box" style="background:#000000;"></div> Advanced
+</div>
 </div>
 
 <div id="map"></div>
@@ -79,6 +100,7 @@ mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwY
 
 let currentPopup = null;
 let profileChart = null;
+let trailData = null;
 
 const map = new mapboxgl.Map({
     container:'map',
@@ -92,9 +114,11 @@ map.on('load', loadTrails);
 /* ---------- Load Trails ---------- */
 function loadTrails(){
 
-    fetch('map.geojson?v=3')
+    fetch('map.geojson?v=4')
     .then(r=>r.json())
     .then(data=>{
+
+        trailData = data;
 
         map.addSource('trails',{
             type:'geojson',
@@ -131,9 +155,13 @@ function loadTrails(){
 
         buildSidebar(data);
 
+        /* Map click now uses SAME function */
         map.on('click','trail-lines', e=>{
             selectTrail(e.features[0]);
         });
+
+        map.on('mouseenter','trail-lines',()=>map.getCanvas().style.cursor='pointer');
+        map.on('mouseleave','trail-lines',()=>map.getCanvas().style.cursor='');
     });
 }
 
@@ -151,30 +179,39 @@ function buildSidebar(data){
     });
 }
 
-/* ---------- Select Trail ---------- */
+/* ---------- Select Trail (single source of truth) ---------- */
 function selectTrail(feature){
 
+    const props = feature.properties;
+
+    /* Remove previous popup */
     if(currentPopup) currentPopup.remove();
 
+    /* Highlight */
     map.setFilter('trail-highlight',
         ['==',
             ['to-string',['get','trailnumber']],
-            String(feature.properties.trailnumber)
+            String(props.trailnumber)
         ]
     );
 
     const coords = feature.geometry.coordinates;
 
+    /* Zoom */
     const bounds = coords.reduce((b,c)=>b.extend(c),
         new mapboxgl.LngLatBounds(coords[0],coords[0])
     );
     map.fitBounds(bounds,{padding:40});
 
+    /* Popup WITH number */
     const mid = coords[Math.floor(coords.length/2)];
 
     currentPopup = new mapboxgl.Popup()
         .setLngLat(mid)
-        .setHTML('<b>'+feature.properties.trailname+'</b>')
+        .setHTML(
+            '<b>' + props.trailname + ' (' + props.trailnumber + ')</b><br>' +
+            'Difficulty: ' + props.traildifficulty
+        )
         .addTo(map);
 
     showElevationProfile(coords);
@@ -183,10 +220,7 @@ function selectTrail(feature){
 /* ---------- Elevation Profile ---------- */
 function showElevationProfile(coords){
 
-    if(typeof Chart === 'undefined'){
-        console.log("Chart.js not loaded");
-        return;
-    }
+    if(typeof Chart === 'undefined') return;
 
     let dist = 0;
     const distances = [];
@@ -230,11 +264,7 @@ function showElevationProfile(coords){
         options:{
             responsive:true,
             maintainAspectRatio:false,
-            plugins:{legend:{display:false}},
-            scales:{
-                x:{title:{display:true,text:'Distance (km)'}},
-                y:{title:{display:true,text:'Elevation (m)'}}
-            }
+            plugins:{legend:{display:false}}
         }
     });
 }
