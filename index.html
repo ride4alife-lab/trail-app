@@ -27,6 +27,24 @@ body { margin:0; font-family:Arial; }
     overflow-y:auto;
     width:max-content;
     max-width:80vw;
+    transition:transform 0.2s;
+}
+
+#sidebar.hidden {
+    transform:translateX(-110%);
+}
+
+#toggleSidebar {
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:3;
+    background:white;
+    border:none;
+    padding:6px 10px;
+    border-radius:6px;
+    box-shadow:0 0 6px rgba(0,0,0,0.3);
+    font-size:18px;
 }
 
 .trail-item {
@@ -35,6 +53,7 @@ body { margin:0; font-family:Arial; }
     white-space:nowrap;
 }
 
+/* Legend */
 .legend-row {
     display:flex;
     align-items:center;
@@ -61,6 +80,16 @@ body { margin:0; font-family:Arial; }
 .symbol.extreme::before { left:0; }
 .symbol.extreme::after { left:5px; }
 
+/* Badge */
+.badge {
+    display:inline-block;
+    padding:2px 6px;
+    border-radius:4px;
+    color:white;
+    font-size:12px;
+    margin-top:4px;
+}
+
 /* GPS buttons */
 .gps-btn {
     position:absolute;
@@ -82,13 +111,13 @@ body { margin:0; font-family:Arial; }
     color:white;
 }
 
-/* Profile panel */
+/* Profile */
 #profileContainer {
     position:fixed;
     left:0;
     bottom:0;
     width:100%;
-    height:180px;
+    height:200px;
     background:white;
     box-shadow:0 -2px 6px rgba(0,0,0,0.3);
     display:none;
@@ -98,7 +127,6 @@ body { margin:0; font-family:Arial; }
 #profileHeader {
     display:flex;
     justify-content:space-between;
-    align-items:center;
     padding:4px 10px;
     border-bottom:1px solid #ddd;
     font-size:14px;
@@ -113,6 +141,8 @@ body { margin:0; font-family:Arial; }
 </style>
 </head>
 <body>
+
+<button id="toggleSidebar">☰</button>
 
 <div id="sidebar">
 <b>Trails</b>
@@ -134,7 +164,7 @@ body { margin:0; font-family:Arial; }
 
 <div id="profileContainer">
     <div id="profileHeader">
-        <span>Elevation Profile</span>
+        <span id="profileInfo">Elevation Profile</span>
         <button id="closeProfile">✕</button>
     </div>
     <canvas id="profileChart"></canvas>
@@ -155,12 +185,12 @@ const difficultyColors = {
     extreme: '#000000'
 };
 
-function normalizeDifficulty(value) {
-    const d = (value || '').toString().trim().toLowerCase();
-    if (d.startsWith('easy')) return 'easy';
-    if (d.startsWith('intermediate')) return 'intermediate';
-    if (d.startsWith('expert') || d.startsWith('advanced')) return 'expert';
-    if (d.startsWith('extreme')) return 'extreme';
+function normalizeDifficulty(value){
+    const d = (value || '').toString().toLowerCase();
+    if (d.includes('easy')) return 'easy';
+    if (d.includes('intermediate')) return 'intermediate';
+    if (d.includes('expert') || d.includes('advanced')) return 'expert';
+    if (d.includes('extreme')) return 'extreme';
     return 'intermediate';
 }
 
@@ -170,6 +200,10 @@ const map = new mapboxgl.Map({
     center:[-105.0633,39.9223],
     zoom:14
 });
+
+/* Sidebar toggle */
+document.getElementById('toggleSidebar').onclick = () =>
+    document.getElementById('sidebar').classList.toggle('hidden');
 
 /* GPS */
 const geo = new mapboxgl.GeolocateControl({
@@ -193,16 +227,15 @@ geo.on('geolocate', e=>{
 });
 
 /* Close profile */
-document.getElementById('closeProfile').onclick = function(){
+document.getElementById('closeProfile').onclick = ()=>{
     document.getElementById('profileContainer').style.display='none';
     map.setFilter('trail-highlight',['==','trailnumber','']);
-    if(currentPopup){ currentPopup.remove(); currentPopup=null; }
+    if(currentPopup){ currentPopup.remove(); }
 };
 
-map.on('load', loadTrails);
+map.on('load', ()=>{
 
-function loadTrails(){
-fetch('map.geojson?v=7')
+fetch('map.geojson?v=11')
 .then(r=>r.json())
 .then(data=>{
 
@@ -212,26 +245,39 @@ data.features.forEach(f=>{
     f.properties._diffNorm = normalizeDifficulty(f.properties.traildifficulty);
 });
 
-map.addSource('trails',{type:'geojson',data:data});
+map.addSource('trails',{type:'geojson',data});
 
+/* Lines */
 map.addLayer({
 id:'trail-lines',
 type:'line',
 source:'trails',
 paint:{
 'line-width':4,
-'line-color':[
-'match',
-['get','_diffNorm'],
+'line-color':['match',['get','_diffNorm'],
 'easy','#2ecc71',
 'intermediate','#0074D9',
 'expert','#777777',
 'extreme','#000000',
-'#0074D9'
-]
+'#0074D9']
 }
 });
 
+/* Direction arrows */
+map.addLayer({
+id:'trail-arrows',
+type:'symbol',
+source:'trails',
+layout:{
+'symbol-placement':'line',
+'symbol-spacing':80,
+'icon-image':'triangle-15',
+'icon-size':0.7,
+'icon-rotate':90
+}
+});
+
+/* Highlight */
 map.addLayer({
 id:'trail-highlight',
 type:'line',
@@ -240,69 +286,23 @@ paint:{'line-width':8,'line-color':'#FFD700'},
 filter:['==','trailnumber','']
 });
 
-buildSidebar(data);
+/* Sidebar */
+const list = document.getElementById('trailList');
+data.features.forEach(f=>{
+    const d=document.createElement('div');
+    d.className='trail-item';
+    d.textContent=f.properties.trailnumber+' – '+f.properties.trailname;
+    d.onclick=()=>selectTrail(f);
+    list.appendChild(d);
+});
 
 map.on('click','trail-lines', e=>{
-const num = e.features[0].properties.trailnumber;
-const feature = fullGeoJSON.features.find(f =>
-String(f.properties.trailnumber) === String(num)
-);
-if(feature) selectTrail(feature);
+    const num=e.features[0].properties.trailnumber;
+    const f=fullGeoJSON.features.find(x=>String(x.properties.trailnumber)===String(num));
+    if(f) selectTrail(f);
 });
 });
-}
-
-function buildSidebar(data){
-const list=document.getElementById('trailList');
-list.innerHTML='';
-data.features.forEach(f=>{
-const d=document.createElement('div');
-d.className='trail-item';
-d.textContent=f.properties.trailnumber+' – '+f.properties.trailname;
-d.onclick=()=>selectTrail(f);
-list.appendChild(d);
 });
-}
-
-function selectTrail(feature){
-
-const props = feature.properties;
-const diff = normalizeDifficulty(props.traildifficulty);
-const profileColor = difficultyColors[diff];
-
-if(currentPopup) currentPopup.remove();
-
-map.setFilter('trail-highlight',
-['==',['to-string',['get','trailnumber']],String(props.trailnumber)]
-);
-
-const coords = feature.geometry.coordinates;
-
-const bounds = coords.reduce((b,c)=>b.extend(c),
-new mapboxgl.LngLatBounds(coords[0],coords[0])
-);
-map.fitBounds(bounds,{padding:40});
-
-const mid = coords[Math.floor(coords.length/2)];
-
-/* RESTORED FULL POPUP */
-currentPopup = new mapboxgl.Popup()
-.setLngLat(mid)
-.setHTML(
-    '<b>' + props.trailname + ' (' + props.trailnumber + ')</b><br>' +
-    'Difficulty: ' + props.traildifficulty + '<br>' +
-    'Zone: ' + props.zonename + ' (' + props.zonecode + ')'
-)
-.addTo(map);
-
-showProfile(coords, profileColor);
-}
-
-function showProfile(coords, color){
-
-let dist=0;
-const dists=[];
-const elev=[];
 
 function distance(a,b){
 const R=6371000;
@@ -314,14 +314,60 @@ const y=dLat;
 return Math.sqrt(x*x+y*y)*R;
 }
 
+function selectTrail(feature){
+
+const p=feature.properties;
+const color=difficultyColors[p._diffNorm];
+const coords=feature.geometry.coordinates;
+
+if(currentPopup) currentPopup.remove();
+
+map.setFilter('trail-highlight',
+['==',['to-string',['get','trailnumber']],String(p.trailnumber)]
+);
+
+/* Distance + climb */
+let dist=0, climb=0;
+for(let i=1;i<coords.length;i++){
+dist+=distance(coords[i-1],coords[i]);
+if(coords[i][2] && coords[i-1][2]){
+const g=coords[i][2]-coords[i-1][2];
+if(g>0) climb+=g;
+}
+}
+
+/* Popup */
+const mid=coords[Math.floor(coords.length/2)];
+
+currentPopup=new mapboxgl.Popup()
+.setLngLat(mid)
+.setHTML(
+'<b>'+p.trailname+' ('+p.trailnumber+')</b><br>' +
+'<span class="badge" style="background:'+color+'">'+p.traildifficulty+'</span><br>' +
+'Zone: '+p.zonename+' ('+p.zonecode+')'
+)
+.addTo(map);
+
+/* Profile header */
+document.getElementById('profileInfo').innerText =
+p.trailname+' • '+(dist/1000).toFixed(1)+' km • +'+Math.round(climb)+' m';
+
+showProfile(coords,color);
+}
+
+function showProfile(coords,color){
+
+let dist=0;
+const dists=[];
+const elev=[];
+
 for(let i=0;i<coords.length;i++){
-elev.push(coords[i][2] || 0);
+elev.push(coords[i][2]||0);
 if(i>0) dist+=distance(coords[i-1],coords[i]);
 dists.push((dist/1000).toFixed(2));
 }
 
 document.getElementById('profileContainer').style.display='block';
-map.resize();
 
 if(profileChart) profileChart.destroy();
 
