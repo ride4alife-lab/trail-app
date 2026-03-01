@@ -43,7 +43,6 @@ body { margin:0; font-family:Arial; }
 }
 
 .symbol { width:14px; height:14px; display:inline-block; }
-
 .symbol.easy { background:#2ecc71; border-radius:50%; }
 .symbol.intermediate { background:#0074D9; }
 .symbol.expert { background:#777777; transform:rotate(45deg); }
@@ -149,12 +148,25 @@ let profileChart;
 let currentPopup = null;
 let followMode = false;
 
+/* Standard colors */
 const difficultyColors = {
     easy: '#2ecc71',
     intermediate: '#0074D9',
     expert: '#777777',
     extreme: '#000000'
 };
+
+/* Normalize difficulty text */
+function normalizeDifficulty(value) {
+    const d = (value || '').toString().trim().toLowerCase();
+
+    if (d.startsWith('easy')) return 'easy';
+    if (d.startsWith('intermediate') || d === 'blue') return 'intermediate';
+    if (d.startsWith('expert') || d.startsWith('advanced') || d === 'grey' || d === 'gray') return 'expert';
+    if (d.startsWith('extreme') || d === 'black') return 'extreme';
+
+    return 'intermediate';
+}
 
 const map = new mapboxgl.Map({
     container:'map',
@@ -180,10 +192,7 @@ document.getElementById('followBtn').onclick = function(){
 
 geo.on('geolocate', e=>{
     if(followMode){
-        map.easeTo({
-            center:[e.coords.longitude, e.coords.latitude],
-            duration:500
-        });
+        map.easeTo({center:[e.coords.longitude, e.coords.latitude]});
     }
 });
 
@@ -191,21 +200,22 @@ geo.on('geolocate', e=>{
 document.getElementById('closeProfile').onclick = function(){
     document.getElementById('profileContainer').style.display='none';
     map.setFilter('trail-highlight',['==','trailnumber','']);
-
-    if(currentPopup){
-        currentPopup.remove();
-        currentPopup = null;
-    }
+    if(currentPopup){ currentPopup.remove(); currentPopup=null; }
 };
 
 map.on('load', loadTrails);
 
 function loadTrails(){
-fetch('map.geojson?v=5')
+fetch('map.geojson?v=6')
 .then(r=>r.json())
 .then(data=>{
 
 fullGeoJSON = data;
+
+/* Add normalized difficulty to features */
+data.features.forEach(f=>{
+    f.properties._diffNorm = normalizeDifficulty(f.properties.traildifficulty);
+});
 
 map.addSource('trails',{type:'geojson',data:data});
 
@@ -217,7 +227,7 @@ paint:{
 'line-width':4,
 'line-color':[
 'match',
-['downcase',['get','traildifficulty']],
+['get','_diffNorm'],
 'easy','#2ecc71',
 'intermediate','#0074D9',
 'expert','#777777',
@@ -262,14 +272,13 @@ list.appendChild(d);
 
 function selectTrail(feature){
 
-const props = feature.properties;
-const diff = (props.traildifficulty || '').toLowerCase();
-const profileColor = difficultyColors[diff] || '#0074D9';
+const diff = normalizeDifficulty(feature.properties.traildifficulty);
+const profileColor = difficultyColors[diff];
 
 if(currentPopup) currentPopup.remove();
 
 map.setFilter('trail-highlight',
-['==',['to-string',['get','trailnumber']],String(props.trailnumber)]
+['==',['to-string',['get','trailnumber']],String(feature.properties.trailnumber)]
 );
 
 const coords = feature.geometry.coordinates;
@@ -283,7 +292,7 @@ const mid = coords[Math.floor(coords.length/2)];
 
 currentPopup = new mapboxgl.Popup()
 .setLngLat(mid)
-.setHTML('<b>'+props.trailname+' ('+props.trailnumber+')</b><br>'+props.traildifficulty)
+.setHTML('<b>'+feature.properties.trailname+' ('+feature.properties.trailnumber+')</b><br>'+feature.properties.traildifficulty)
 .addTo(map);
 
 showProfile(coords, profileColor);
