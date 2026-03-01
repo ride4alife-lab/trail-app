@@ -5,27 +5,15 @@
 <title>Trail App</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-<!-- Prevent aggressive mobile caching -->
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-
 <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
 <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
-<script src="chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-body { margin:0; font-family: Arial, sans-serif; }
+body { margin:0; font-family:Arial; }
+#map { position:absolute; top:0; bottom:0; width:100%; }
 
-#map {
-    position:absolute;
-    top:0;
-    left:0;
-    right:0;
-    bottom:0;
-}
-
-/* Sidebar */
+/* Sidebar (auto width based on content) */
 #sidebar {
     position:absolute;
     top:10px;
@@ -37,41 +25,68 @@ body { margin:0; font-family: Arial, sans-serif; }
     z-index:2;
     max-height:70vh;
     overflow-y:auto;
-    width:auto;
+    display:inline-block;
+    width:max-content;
     max-width:80vw;
 }
 
-.trail-item { cursor:pointer; padding:3px 0; }
+/* Trail list */
+.trail-item {
+    cursor:pointer;
+    padding:3px 0;
+    white-space:nowrap;
+}
 
-.legend-row { display:flex; align-items:center; gap:6px; }
-.legend-box { width:14px; height:14px; }
-
-/* GPS buttons */
-#gpsControls {
-    position:absolute;
-    top:10px;
-    right:10px;
-    z-index:3;
+/* Legend rows */
+.legend-row {
     display:flex;
-    flex-direction:column;
+    align-items:center;
     gap:6px;
+    margin-top:4px;
 }
 
-.gps-btn {
-    background:white;
-    border:none;
-    padding:8px 10px;
-    border-radius:6px;
-    box-shadow:0 0 6px rgba(0,0,0,0.3);
-    font-size:14px;
+/* Difficulty symbols */
+.symbol {
+    width:14px;
+    height:14px;
+    display:inline-block;
 }
 
-.gps-btn.active {
+/* Easy – green circle */
+.symbol.easy {
+    background:#2ecc71;
+    border-radius:50%;
+}
+
+/* Intermediate – blue square */
+.symbol.intermediate {
     background:#0074D9;
-    color:white;
 }
 
-/* Elevation panel */
+/* Expert – gray diamond */
+.symbol.expert {
+    background:#777;
+    transform:rotate(45deg);
+}
+
+/* Extreme – double diamond */
+.symbol.extreme {
+    position:relative;
+}
+.symbol.extreme::before,
+.symbol.extreme::after {
+    content:"";
+    position:absolute;
+    width:10px;
+    height:10px;
+    background:#000;
+    transform:rotate(45deg);
+    top:2px;
+}
+.symbol.extreme::before { left:0; }
+.symbol.extreme::after { left:5px; }
+
+/* Elevation profile */
 #profileContainer {
     position:fixed;
     left:0;
@@ -90,16 +105,23 @@ body { margin:0; font-family: Arial, sans-serif; }
 <div id="sidebar">
 <b>Trails</b>
 <div id="trailList"></div>
-<hr>
-<b>Difficulty</b>
-<div class="legend-row"><div class="legend-box" style="background:#2ecc71;"></div> Easy</div>
-<div class="legend-row"><div class="legend-box" style="background:#0074D9;"></div> Intermediate</div>
-<div class="legend-row"><div class="legend-box" style="background:#000000;"></div> Advanced</div>
-</div>
 
-<div id="gpsControls">
-<button id="centerBtn" class="gps-btn">Center</button>
-<button id="followBtn" class="gps-btn">Follow</button>
+<hr>
+
+<b>Difficulty</b>
+
+<div class="legend-row">
+<span class="symbol easy"></span> Easy
+</div>
+<div class="legend-row">
+<span class="symbol intermediate"></span> Intermediate
+</div>
+<div class="legend-row">
+<span class="symbol expert"></span> Expert
+</div>
+<div class="legend-row">
+<span class="symbol extreme"></span> Extreme
+</div>
 </div>
 
 <div id="map"></div>
@@ -111,12 +133,17 @@ body { margin:0; font-family: Arial, sans-serif; }
 <script>
 mapboxgl.accessToken = 'pk.eyJ1IjoibHVuZG9uIiwiYSI6ImNtbTB4eWd3YzAzcDgydnEyNGRwYWViN2YifQ.cdVVhtxFaLP6DWSYnGXn2g';
 
+let fullGeoJSON;
+let profileChart;
 let currentPopup = null;
-let profileChart = null;
-let fullGeoJSON = null;
-let followMode = false;
 
-/* Map */
+const difficultyColors = {
+    easy: '#2ecc71',
+    intermediate: '#0074D9',
+    expert: '#777777',
+    extreme: '#000000'
+};
+
 const map = new mapboxgl.Map({
     container:'map',
     style:'mapbox://styles/mapbox/outdoors-v12',
@@ -124,182 +151,151 @@ const map = new mapboxgl.Map({
     zoom:14
 });
 
-/* Blue GPS dot */
-const geolocate = new mapboxgl.GeolocateControl({
-    positionOptions:{ enableHighAccuracy:true },
-    trackUserLocation:true,
-    showUserHeading:true
+map.on('load', loadTrails);
+
+function loadTrails(){
+
+fetch('map.geojson?v=2')
+.then(r=>r.json())
+.then(data=>{
+
+fullGeoJSON = data;
+
+map.addSource('trails',{type:'geojson',data:data});
+
+map.addLayer({
+id:'trail-lines',
+type:'line',
+source:'trails',
+paint:{
+'line-width':4,
+'line-color':[
+'match',
+['downcase',['get','traildifficulty']],
+'easy', difficultyColors.easy,
+'intermediate', difficultyColors.intermediate,
+'expert', difficultyColors.expert,
+'extreme', difficultyColors.extreme,
+'#ff0000'
+]
+}
 });
 
-map.addControl(geolocate);
-
-/* GPS buttons */
-document.getElementById('centerBtn').onclick = () => {
-    geolocate.trigger();
-};
-
-document.getElementById('followBtn').onclick = () => {
-    followMode = !followMode;
-    document.getElementById('followBtn').classList.toggle('active', followMode);
-};
-
-/* Follow logic */
-geolocate.on('geolocate', e => {
-    if(followMode){
-        map.easeTo({
-            center:[e.coords.longitude, e.coords.latitude],
-            duration:500
-        });
-    }
+map.addLayer({
+id:'trail-highlight',
+type:'line',
+source:'trails',
+paint:{'line-width':8,'line-color':'#FFD700'},
+filter:['==','trailnumber','']
 });
 
-/* Load trails */
-map.on('load', () => {
+buildSidebar(data);
 
-    fetch('map.geojson?v=20')
-    .then(r=>r.json())
-    .then(data=>{
-
-        fullGeoJSON = data;
-
-        map.addSource('trails',{ type:'geojson', data:data });
-
-        map.addLayer({
-            id:'trail-lines',
-            type:'line',
-            source:'trails',
-            paint:{
-                'line-width':4,
-                'line-color':[
-                    'match',
-                    ['downcase',['get','traildifficulty']],
-                    'easy','#2ecc71',
-                    'intermediate','#0074D9',
-                    'advanced','#000000',
-                    '#ff0000'
-                ]
-            }
-        });
-
-        map.addLayer({
-            id:'trail-highlight',
-            type:'line',
-            source:'trails',
-            paint:{
-                'line-width':8,
-                'line-color':'#FFD700'
-            },
-            filter:['==','trailnumber','']
-        });
-
-        buildSidebar(data);
-
-        map.on('click','trail-lines', e=>{
-            const number = e.features[0].properties.trailnumber;
-
-            const fullFeature = fullGeoJSON.features.find(f =>
-                String(f.properties.trailnumber) === String(number)
-            );
-
-            if(fullFeature) selectTrail(fullFeature);
-        });
-    });
+map.on('click','trail-lines', e=>{
+const num = e.features[0].properties.trailnumber;
+const feature = fullGeoJSON.features.find(f =>
+String(f.properties.trailnumber) === String(num)
+);
+if(feature) selectTrail(feature);
 });
 
-/* Sidebar */
-function buildSidebar(data){
-    const list = document.getElementById('trailList');
-    list.innerHTML = '';
-
-    data.features.forEach(f=>{
-        const item = document.createElement('div');
-        item.className = 'trail-item';
-        item.textContent = f.properties.trailnumber + ' – ' + f.properties.trailname;
-        item.onclick = ()=>selectTrail(f);
-        list.appendChild(item);
-    });
+});
 }
 
-/* Select trail */
+function buildSidebar(data){
+const list=document.getElementById('trailList');
+list.innerHTML='';
+
+data.features.forEach(f=>{
+const d=document.createElement('div');
+d.className='trail-item';
+d.textContent=f.properties.trailnumber+' – '+f.properties.trailname;
+d.onclick=()=>selectTrail(f);
+list.appendChild(d);
+});
+}
+
 function selectTrail(feature){
 
-    if(currentPopup) currentPopup.remove();
+const props = feature.properties;
+const difficulty = (props.traildifficulty || '').toLowerCase();
+const profileColor = difficultyColors[difficulty] || '#0074D9';
 
-    const props = feature.properties;
+if(currentPopup) currentPopup.remove();
 
-    map.setFilter('trail-highlight',
-        ['==',
-            ['to-string',['get','trailnumber']],
-            String(props.trailnumber)
-        ]
-    );
+map.setFilter('trail-highlight',
+['==',['to-string',['get','trailnumber']],String(props.trailnumber)]
+);
 
-    const coords = feature.geometry.coordinates;
+const coords = feature.geometry.coordinates;
 
-    const bounds = coords.reduce((b,c)=>b.extend(c),
-        new mapboxgl.LngLatBounds(coords[0],coords[0])
-    );
-    map.fitBounds(bounds,{padding:40});
+const bounds = coords.reduce((b,c)=>b.extend(c),
+new mapboxgl.LngLatBounds(coords[0],coords[0])
+);
+map.fitBounds(bounds,{padding:40});
 
-    const mid = coords[Math.floor(coords.length/2)];
+const mid = coords[Math.floor(coords.length/2)];
 
-    currentPopup = new mapboxgl.Popup()
-        .setLngLat(mid)
-        .setHTML('<b>'+props.trailname+' ('+props.trailnumber+')</b>')
-        .addTo(map);
+currentPopup = new mapboxgl.Popup()
+.setLngLat(mid)
+.setHTML(
+'<b>'+props.trailname+' ('+props.trailnumber+')</b><br>'+
+'Difficulty: '+props.traildifficulty
+)
+.addTo(map);
 
-    showElevationProfile(coords);
+showProfile(coords, profileColor);
 }
 
-/* Elevation profile */
-function showElevationProfile(coords){
+function showProfile(coords, color){
 
-    if(typeof Chart === 'undefined') return;
+let dist=0;
+const dists=[];
+const elev=[];
 
-    let dist = 0;
-    const distances = [];
-    const elevations = [];
+function distance(a,b){
+const R=6371000;
+const toRad=x=>x*Math.PI/180;
+const dLat=toRad(b[1]-a[1]);
+const dLon=toRad(b[0]-a[0]);
+const x=dLon*Math.cos(toRad((a[1]+b[1])/2));
+const y=dLat;
+return Math.sqrt(x*x+y*y)*R;
+}
 
-    function d(a,b){
-        const R = 6371000;
-        const toRad = x => x*Math.PI/180;
-        const dLat = toRad(b[1]-a[1]);
-        const dLon = toRad(b[0]-a[0]);
-        const x = dLon * Math.cos(toRad((a[1]+b[1])/2));
-        const y = dLat;
-        return Math.sqrt(x*x + y*y) * R;
-    }
+for(let i=0;i<coords.length;i++){
+elev.push(coords[i][2] || 0);
+if(i>0) dist+=distance(coords[i-1],coords[i]);
+dists.push((dist/1000).toFixed(2));
+}
 
-    for(let i=0;i<coords.length;i++){
-        elevations.push(coords[i][2] || 0);
-        if(i>0) dist += d(coords[i-1],coords[i]);
-        distances.push((dist/1000).toFixed(2));
-    }
+document.getElementById('profileContainer').style.display='block';
+map.resize();
 
-    document.getElementById('profileContainer').style.display = 'block';
-    map.resize();
+if(profileChart) profileChart.destroy();
 
-    const ctx = document.getElementById('profileChart');
-
-    if(profileChart) profileChart.destroy();
-
-    profileChart = new Chart(ctx,{
-        type:'line',
-        data:{
-            labels:distances,
-            datasets:[{
-                data:elevations,
-                borderColor:'#0074D9',
-                fill:true,
-                tension:0.1
-            }]
-        },
-        options:{
-            responsive:true,
-            maintainAspectRatio:false,
-            plugins:{legend:{display:false}}
-        }
-    });
+profileChart=new Chart(document.getElementById('profileChart'),{
+type:'line',
+data:{
+labels:dists,
+datasets:[{
+data:elev,
+borderColor:color,
+backgroundColor:color+'33',
+fill:true,
+tension:0.1
+}]
+},
+options:{
+responsive:true,
+maintainAspectRatio:false,
+plugins:{legend:{display:false}},
+scales:{
+x:{title:{display:true,text:'Distance (km)'}},
+y:{title:{display:true,text:'Elevation (m)'}}
+}
+}
+});
 }
 </script>
 
